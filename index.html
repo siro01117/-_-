@@ -115,14 +115,14 @@
                 return { total, avg: Math.round(total / 7) };
             }, [filteredSchedules]);
 
-            // [STABLE EXPORT ENGINE v2] - 캡처 시 태그 제거 로직 통합
+            // [FINAL STABLE EXPORT ENGINE] 텍스트 레이어 강제 상단 배치 및 태그 잔상 완전 제거
             const handleExport = () => {
                 if (!captureAreaRef.current || !current) return;
                 
                 document.fonts.ready.then(() => {
                     html2canvas(captureAreaRef.current, {
                         backgroundColor: "#ffffff",
-                        scale: 2, // 안정적인 scale 2 권장
+                        scale: 2, 
                         useCORS: true,
                         allowTaint: true,
                         onclone: (clonedDoc) => {
@@ -131,21 +131,30 @@
                                 area.style.height = 'auto';
                                 area.style.overflow = 'visible';
 
-                                // [핵심 추가] 캡처 복제본에서 태그 영역을 완전히 제거 (깔끔한 이미지)
+                                // 1. 태그 영역(.tag-area)과 그 안의 모든 흰색 박스 요소를 완전히 제거
                                 const tagAreas = area.querySelectorAll('.tag-area');
                                 tagAreas.forEach(el => el.remove());
 
-                                // 텍스트 컨테이너 미세 상단 조정 (밀림 상쇄)
-                                const items = area.querySelectorAll('.schedule-block');
-                                items.forEach(el => {
-                                    el.style.overflow = 'visible';
-                                    el.style.transform = 'translateY(-4px)'; // 미세 상단 이동
+                                // 2. 모든 스케줄 블록에 대해 레이어 및 텍스트 위치 강제 조정
+                                const blocks = area.querySelectorAll('.absolute.rounded-3xl');
+                                blocks.forEach(block => {
+                                    // 블록 자체의 오버플로를 해제하여 텍스트가 삐져나와도 보이게 함
+                                    block.style.overflow = 'visible';
+                                    
+                                    // 내부 텍스트 컨테이너(schedule-block) 처리
+                                    const inner = block.querySelector('.schedule-block');
+                                    if (inner) {
+                                        inner.style.position = 'relative';
+                                        inner.style.zIndex = '9999'; // 텍스트를 무조건 배경 블록 위로
+                                        inner.style.transform = 'translateY(-6px)'; // 요청하신 상단 이동
+                                        inner.style.color = '#000000'; // 텍스트 색상 명확화
+                                    }
                                 });
                             }
                         }
                     }).then(canvas => {
                         const link = document.createElement('a');
-                        link.download = `${current.name}_주간계획표_수정본.png`;
+                        link.download = `${current.name}_주간계획표_최종.png`;
                         link.href = canvas.toDataURL('image/png', 1.0);
                         link.click();
                     });
