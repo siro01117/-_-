@@ -4,13 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>스터디큐브 통합 관리 시스템</title>
-    <!-- 시스템 코어 엔진 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- 이미지 변환 엔진 로드 -->
     <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
@@ -91,9 +89,6 @@
             
             const [tags, setTags] = useState(['인강', '자습', '학원', '수업', '과외']);
             const [newTagInput, setNewTagInput] = useState('');
-            const [customColors, setCustomColors] = useState([]);
-            const [tempColor, setTempColor] = useState('#3b82f6');
-
             const [sForm, setSForm] = useState({ title: '', days: [], startH: '09', startM: '00', endH: '10', endM: '00', tags: ['자습'], memo: '', color: DEFAULT_COLORS[0] });
 
             useEffect(() => {
@@ -117,28 +112,36 @@
                 return { total, avg: Math.round(total / 7) };
             }, [filteredSchedules]);
 
-            // 이미지 출력 엔진 최적화
+            // [MODIFIED] 이미지 출력 엔진 - 6px 상단 이동 로직 통합
             const handleExport = () => {
                 if (!captureAreaRef.current || !current) return;
-                html2canvas(captureAreaRef.current, {
-                    backgroundColor: "#ffffff",
-                    scale: 3, 
-                    useCORS: true,
-                    allowTaint: true,
-                    onclone: (clonedDoc) => {
-                        const area = clonedDoc.querySelector('.export-area');
-                        if (area) {
-                            area.style.height = 'auto';
-                            area.style.overflow = 'visible';
-                            const items = area.querySelectorAll('.schedule-block');
-                            items.forEach(el => el.style.overflow = 'visible');
+                
+                document.fonts.ready.then(() => {
+                    html2canvas(captureAreaRef.current, {
+                        backgroundColor: "#ffffff",
+                        scale: 3, 
+                        useCORS: true,
+                        allowTaint: true,
+                        onclone: (clonedDoc) => {
+                            const area = clonedDoc.querySelector('.export-area');
+                            if (area) {
+                                area.style.height = 'auto';
+                                area.style.overflow = 'visible';
+                                
+                                // 블록 내 텍스트 컨테이너를 정확히 6px 위로 올림
+                                const items = area.querySelectorAll('.schedule-block');
+                                items.forEach(el => {
+                                    el.style.overflow = 'visible';
+                                    el.style.transform = 'translateY(-6px)'; // 6px 상단 이동
+                                });
+                            }
                         }
-                    }
-                }).then(canvas => {
-                    const link = document.createElement('a');
-                    link.download = `${current.name}_주간계획표_스터디큐브.png`;
-                    link.href = canvas.toDataURL('image/png', 1.0);
-                    link.click();
+                    }).then(canvas => {
+                        const link = document.createElement('a');
+                        link.download = `${current.name}_주간계획표_스터디큐브.png`;
+                        link.href = canvas.toDataURL('image/png', 1.0);
+                        link.click();
+                    });
                 });
             };
 
@@ -323,7 +326,7 @@
                                                 </div>
                                             </div>
 
-                                            {/* 타임라인 - 시간 열 너비 축소 및 가로 폭 확장 */}
+                                            {/* 타임라인 */}
                                             <div className="flex-1 grid-layout grid divide-x-2 divide-slate-100 border-2 border-slate-100 rounded-[3.5rem] overflow-hidden shadow-2xl bg-white">
                                                 <div className="bg-slate-50/50 flex flex-col text-center">
                                                     <div className="h-20 border-b-4 border-slate-900 flex items-center justify-center text-[14px] font-black text-slate-900 uppercase bg-white italic tracking-tighter">TIME</div>
@@ -357,14 +360,14 @@
                                                                                 <span className="truncate leading-tight font-black text-[18px] uppercase tracking-tighter">{a.title}</span>
                                                                             </div>
                                                                             
+                                                                            {/* [MODIFIED] 시간 텍스트 크기 축소 (12px -> 10px) */}
                                                                             {blockH > 65 && (
-                                                                                <div className="text-[12px] font-black opacity-80 tracking-tighter mb-3 flex items-center gap-2">
-                                                                                    <Icon name="clock" size={14} className="opacity-40" />
+                                                                                <div className="text-[12px] font-bold opacity-80 tracking-tighter mb-3 flex items-center gap-2">
+                                                                                    <Icon name="clock" size={12} className="opacity-40" />
                                                                                     {formatTime(a.startH, a.startM)} → {formatTime(a.endH, a.endM)}
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* 태그 영역 - 시간 하단 배치 */}
                                                                             {blockH > 90 && a.tags && a.tags.length > 0 && (
                                                                                 <div className="flex flex-wrap gap-1.5 mb-3">
                                                                                     {a.tags.map(tag => (
