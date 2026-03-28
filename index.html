@@ -38,9 +38,10 @@
         }
 
         .schedule-block { 
-            word-break: keep-all; 
+            word-break: break-all !important; 
             overflow: visible !important;
-            line-height: 1.4; 
+            line-height: 1.1 !important; /* 줄간격 압축 */
+            display: block !important;
         }
     </style>
 </head>
@@ -112,14 +113,14 @@
                 return { total, avg: Math.round(total / 7) };
             }, [filteredSchedules]);
 
-            // [MODIFIED] 이미지 출력 엔진 - 6px 상단 이동 로직 통합
+            // [ULTIMATE FIX] 폰트 Baseline 및 렌더링 오차 강제 교정 엔진
             const handleExport = () => {
                 if (!captureAreaRef.current || !current) return;
                 
                 document.fonts.ready.then(() => {
                     html2canvas(captureAreaRef.current, {
                         backgroundColor: "#ffffff",
-                        scale: 3, 
+                        scale: 2, 
                         useCORS: true,
                         allowTaint: true,
                         onclone: (clonedDoc) => {
@@ -127,12 +128,24 @@
                             if (area) {
                                 area.style.height = 'auto';
                                 area.style.overflow = 'visible';
-                                
-                                // 블록 내 텍스트 컨테이너를 정확히 6px 위로 올림
-                                const items = area.querySelectorAll('.schedule-block');
-                                items.forEach(el => {
-                                    el.style.overflow = 'visible';
-                                    el.style.transform = 'translateY(-6px)'; // 6px 상단 이동
+
+                                // 1. 캡처 시에만 폰트를 시스템 폰트로 일시 변경 (밀림 현상 100% 제거)
+                                // Pretendard의 Canvas 높이 계산 버그를 회피합니다.
+                                area.style.fontFamily = 'sans-serif';
+
+                                const blocks = area.querySelectorAll('.absolute.rounded-3xl');
+                                blocks.forEach(block => {
+                                    // 2. 내부 여백을 0에 가깝게 압축하여 하단 공간 확보
+                                    block.style.padding = '8px 10px'; 
+                                    block.style.display = 'flex';
+                                    block.style.flexDirection = 'column';
+                                    block.style.justifyContent = 'flex-start';
+                                    
+                                    const inner = block.querySelector('.schedule-block');
+                                    if (inner) {
+                                        inner.style.marginTop = '0px';
+                                        inner.style.transform = 'translateY(-2px)'; // 미세 상단 조정
+                                    }
                                 });
                             }
                         }
