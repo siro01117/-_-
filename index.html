@@ -10,53 +10,63 @@
             src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/woff2/Pretendard-Bold.woff2') format('woff2');
             font-weight: 700; font-display: block;
         }
-        body { margin: 0; background-color: #f8fafc; font-family: 'Pretendard', sans-serif; overflow: hidden; }
+        body { margin: 0; background-color: #ffffff; font-family: 'Pretendard', sans-serif; overflow: hidden; }
         
-        /* 슬롯 상호작용 엔진 */
         .tab-slot { 
-            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1); 
-            box-shadow: -10px 0 30px rgba(0,0,0,0.03);
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); 
+            box-shadow: -15px 0 45px rgba(0,0,0,0.05);
             z-index: 1;
-        }
-        .tab-slot:hover { 
-            transform: translateX(-15px); /* 왼쪽으로 살짝 밀리며 입체감 강조 */
-            box-shadow: -30px 0 60px rgba(0,0,0,0.15);
-            z-index: 10;
             background-color: #ffffff;
         }
-        .double-line { border-bottom: 4px double #1E1E22; width: 100%; margin-top: auto; }
+        .tab-slot:hover { 
+            transform: translateY(-20px);
+            box-shadow: -20px 20px 60px rgba(0,0,0,0.15);
+            z-index: 10;
+        }
+        /* 이미지 하단의 특징적인 이중 실선 */
+        .double-line { 
+            border-top: 1px solid #1E1E22;
+            border-bottom: 1px solid #1E1E22;
+            height: 4px;
+            width: 100%;
+            margin-top: auto;
+        }
     </style>
 </head>
 <body class="flex h-screen w-full select-none">
 
-    <div class="w-[22%] bg-[#1E1E22] flex flex-col items-center justify-center p-10 text-white z-20">
-        <div class="w-40 h-40 border-4 border-white/20 mb-16 flex items-center justify-center rotate-45 group hover:rotate-[225deg] transition-transform duration-700">
-            <div class="w-20 h-20 bg-white shadow-[0_0_30px_rgba(255,255,255,0.5)]"></div>
+    <div class="w-[20%] bg-[#1E1E22] flex flex-col items-center justify-center p-12 text-white z-20">
+        <div class="w-48 h-48 mb-24 flex items-center justify-center">
+            <svg viewBox="0 0 100 100" class="w-full h-full stroke-white fill-none" stroke-width="1.5">
+                <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" />
+                <path d="M50 5 L50 95 M10 25 L90 25 M10 75 L90 75" opacity="0.3"/>
+                <path d="M50 35 L75 48 L75 72 L50 85 L25 72 L25 48 Z" fill="white" />
+            </svg>
         </div>
-        <div class="text-center tracking-tighter uppercase italic leading-[0.85]">
-            <h1 class="text-7xl font-black">STUDY</h1>
-            <h1 class="text-7xl font-black mt-2">CUBE</h1>
+        <div class="text-center font-black uppercase leading-[0.9]">
+            <h1 class="text-6xl tracking-tight">STUDY</h1>
+            <h1 class="text-6xl mt-3 tracking-tight">CUBE</h1>
         </div>
     </div>
 
-    <a href="Timetable.html" class="tab-slot flex-1 bg-slate-50 border-r border-slate-200 p-14 flex flex-col no-underline text-inherit group">
-        <h2 class="text-5xl font-black text-[#1E1E22] mt-10 transition-transform group-hover:scale-105 origin-left">Timetable</h2>
-        <div class="double-line mb-10 opacity-20 group-hover:opacity-100 transition-opacity"></div>
+    <a href="Timetable.html" class="tab-slot flex-[1.2] border-r border-slate-100 p-14 flex flex-col no-underline text-inherit group">
+        <h2 class="text-4xl font-extrabold text-[#1E1E22] mt-12 group-hover:scale-105 transition-transform origin-left">Timetable</h2>
+        <div class="double-line mb-12"></div>
     </a>
 
-    <div class="tab-slot flex-1 bg-slate-100/50 border-r border-slate-200 p-14 flex flex-col opacity-60">
-        <h2 class="text-5xl font-black text-[#1E1E22] mt-28">Task List</h2>
-        <div class="double-line mb-16 opacity-10"></div>
+    <div class="tab-slot flex-1 border-r border-slate-100 p-14 flex flex-col">
+        <h2 class="text-3xl font-extrabold text-[#1E1E22] mt-24">Task List</h2>
+        <div class="double-line mb-16"></div>
     </div>
 
-    <div class="tab-slot flex-1 bg-slate-100/50 border-r border-slate-200 p-14 flex flex-col opacity-40">
-        <h2 class="text-5xl font-black text-[#1E1E22] mt-10">IDEA</h2>
-        <div class="double-line mb-20 opacity-10"></div>
+    <div class="tab-slot flex-1 border-r border-slate-100 p-14 flex flex-col">
+        <h2 class="text-3xl font-extrabold text-[#1E1E22] mt-12">IDEA</h2>
+        <div class="double-line mb-20"></div>
     </div>
 
-    <div class="tab-slot flex-1 bg-slate-100/50 p-14 flex flex-col opacity-20">
-        <h2 class="text-5xl font-black text-[#1E1E22] mt-28">SURVEY</h2>
-        <div class="double-line mb-24 opacity-10"></div>
+    <div class="tab-slot flex-1 p-14 flex flex-col">
+        <h2 class="text-3xl font-extrabold text-[#1E1E22] mt-24">SURVEY</h2>
+        <div class="double-line mb-24"></div>
     </div>
 
 </body>
