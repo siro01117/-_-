@@ -14,16 +14,15 @@
         
         .tab-slot { 
             transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); 
-            box-shadow: -15px 0 45px rgba(0,0,0,0.05);
+            box-shadow: -15px 0 45px rgba(0,0,0,0.03);
             z-index: 1;
             background-color: #ffffff;
         }
         .tab-slot:hover { 
             transform: translateY(-20px);
-            box-shadow: -20px 20px 60px rgba(0,0,0,0.15);
+            box-shadow: -20px 20px 60px rgba(0,0,0,0.1);
             z-index: 10;
         }
-        /* 이미지 하단의 특징적인 이중 실선 */
         .double-line { 
             border-top: 1px solid #1E1E22;
             border-bottom: 1px solid #1E1E22;
@@ -31,17 +30,22 @@
             width: 100%;
             margin-top: auto;
         }
+        /* 정식 로고 발광 및 배치 효과 */
+        .logo-glow {
+            filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.2));
+            transition: all 0.5s ease;
+        }
+        .logo-glow:hover {
+            filter: drop-shadow(0 0 25px rgba(255, 255, 255, 0.5));
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body class="flex h-screen w-full select-none">
 
     <div class="w-[20%] bg-[#1E1E22] flex flex-col items-center justify-center p-12 text-white z-20">
         <div class="w-48 h-48 mb-24 flex items-center justify-center">
-            <svg viewBox="0 0 100 100" class="w-full h-full stroke-white fill-none" stroke-width="1.5">
-                <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" />
-                <path d="M50 5 L50 95 M10 25 L90 25 M10 75 L90 75" opacity="0.3"/>
-                <path d="M50 35 L75 48 L75 72 L50 85 L25 72 L25 48 Z" fill="white" />
-            </svg>
+            <img src="1.png" alt="STUDY CUBE LOGO" class="logo-glow w-full h-full object-contain invert">
         </div>
         <div class="text-center font-black uppercase leading-[0.9]">
             <h1 class="text-6xl tracking-tight">STUDY</h1>
@@ -54,17 +58,17 @@
         <div class="double-line mb-12"></div>
     </a>
 
-    <div class="tab-slot flex-1 border-r border-slate-100 p-14 flex flex-col">
+    <div class="tab-slot flex-1 border-r border-slate-100 p-14 flex flex-col opacity-60">
         <h2 class="text-3xl font-extrabold text-[#1E1E22] mt-24">Task List</h2>
         <div class="double-line mb-16"></div>
     </div>
 
-    <div class="tab-slot flex-1 border-r border-slate-100 p-14 flex flex-col">
+    <div class="tab-slot flex-1 border-r border-slate-100 p-14 flex flex-col opacity-40">
         <h2 class="text-3xl font-extrabold text-[#1E1E22] mt-12">IDEA</h2>
         <div class="double-line mb-20"></div>
     </div>
 
-    <div class="tab-slot flex-1 p-14 flex flex-col">
+    <div class="tab-slot flex-1 p-14 flex flex-col opacity-20">
         <h2 class="text-3xl font-extrabold text-[#1E1E22] mt-24">SURVEY</h2>
         <div class="double-line mb-24"></div>
     </div>
