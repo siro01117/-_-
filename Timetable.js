@@ -38,26 +38,21 @@ const App = () => {
     // [3. 클라우드 DB 연동 엔진]
     useEffect(() => {
         if (isAuth && window.supabase) {
-            try {
-                const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                setDbClient(client);
-                
-                client.from('schedules').select('*').then(({ data, error }) => {
-                    if (error) console.error("DB Fetch Error:", error);
-                    if (data) {
-                        setStudents(data.map(row => ({
-                            id: row.id, 
-                            name: row.student_name || "이름 없음", 
-                            schedules: row.data?.schedules || [], 
-                            isDeleted: row.data?.isDeleted || false
-                        })));
-                    }
-                    setIsInitialLoading(false); 
-                });
-            } catch (e) {
-                console.error("Supabase Init Error:", e);
-                setIsInitialLoading(false);
-            }
+            const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            setDbClient(client);
+            
+            client.from('schedules').select('*').then(({ data, error }) => {
+                if (error) console.error("API Error:", error);
+                if (data) {
+                    setStudents(data.map(row => ({
+                        id: row.id, 
+                        name: row.student_name || "이름 없음", 
+                        schedules: row.data?.schedules || [], 
+                        isDeleted: row.data?.isDeleted || false
+                    })));
+                }
+                setIsInitialLoading(false); 
+            });
         }
     }, [isAuth]);
 
@@ -140,14 +135,12 @@ const App = () => {
 
     const handleExport = (format) => { if (window.ExportSystem && captureRef.current) window.ExportSystem.generate(captureRef.current, current.name, format); };
 
-    // [5. 핵심 가드: 보안 및 로딩 분기]
+    // [5. 렌더링 분기]
     if (!isAuth) {
-        // window.AuthSystem이 유효한지 2중으로 검사합니다 (Error #300 방지)
         if (window.AuthSystem && typeof window.AuthSystem.renderGate === 'function') {
             const AuthUI = window.AuthSystem.renderGate(setIsAuth);
             if (AuthUI) return AuthUI;
         }
-        // 로딩 중이거나 AuthSystem이 없을 때 반환할 안전한 JSX
         return (
             <div className="flex h-screen w-full items-center justify-center bg-slate-900">
                 <div className="text-white font-black text-xl animate-pulse tracking-[0.3em] uppercase">Security Initializing...</div>
@@ -160,13 +153,12 @@ const App = () => {
             <div className="flex h-screen items-center justify-center bg-[#0f172a] text-white">
                 <div className="text-center">
                     <div className="text-4xl font-black mb-4 animate-pulse uppercase tracking-[0.2em]">Connecting DB</div>
-                    <div className="text-slate-500 font-bold uppercase text-[10px] tracking-widest">STUDY CUBE CLOUD ENGINE</div>
+                    <div className="text-slate-500 font-bold uppercase text-[10px] tracking-widest leading-loose">STUDY CUBE CLOUD ENGINE</div>
                 </div>
             </div>
         );
     }
 
-    // [6. 메인 시스템 렌더링]
     return (
         <div className="flex h-screen w-full bg-slate-100 font-sans overflow-hidden">
             <aside className="w-72 bg-white border-r border-slate-200 flex flex-col z-20 shadow-sm no-print">
@@ -183,7 +175,7 @@ const App = () => {
                             <span className="font-bold text-slate-700 truncate mr-2">{s.name}</span>
                             <div className="hidden group-hover:flex gap-1 shrink-0">
                                 {!trashMode ? (
-                                    <button onClick={(e) => { e.stopPropagation(); handleStudentAction(s.id, 'delete'); }} className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"><lucide.icons.Trash2 size={12}/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); setStudentModal({open:true, id:s.id, name:s.name}); }} className="p-1 bg-slate-200 rounded hover:bg-slate-300 transition-colors"><lucide.icons.Edit2 size={12}/></button>
                                 ) : (
                                     <button onClick={() => handleStudentAction(s.id, 'restore')} className="p-1 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors"><lucide.icons.RotateCcw size={12}/></button>
                                 )}
@@ -265,8 +257,8 @@ const App = () => {
             {/* [모달 3종] */}
             {studentModal.open && (
                 <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl flex items-center justify-center z-[500]">
-                    <div className="bg-white p-16 rounded-[4rem] w-full max-w-lg shadow-2xl text-center">
-                        <h3 className="text-3xl font-black mb-10 uppercase text-slate-800 italic">New Identity</h3>
+                    <div className="bg-white p-16 rounded-[4rem] w-full max-w-lg shadow-2xl text-center animate-in zoom-in duration-300">
+                        <h3 className="text-3xl font-black mb-10 uppercase text-slate-800 italic">Identity Form</h3>
                         <input type="text" value={studentModal.name} onChange={e=>setStudentModal({...studentModal, name:e.target.value})} className="w-full border-b-8 border-slate-50 p-6 rounded-3xl text-center text-4xl font-black mb-12 outline-none focus:border-blue-500 bg-slate-50" autoFocus placeholder="이름 입력" onKeyDown={e=>e.key==='Enter'&&saveStudent()} />
                         <div className="flex gap-4">
                             <button onClick={()=>setStudentModal({open:false, id:null, name:''})} className="flex-1 py-6 bg-slate-100 rounded-3xl font-black text-slate-400 uppercase tracking-widest">Cancel</button>
