@@ -1,0 +1,296 @@
+const { useState, useMemo, useEffect, useRef } = React;
+
+const Icon = ({ name, size = 20, className = "" }) => {
+    const pascalName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+    const iconData = lucide.icons[pascalName] || lucide.icons[name];
+    if (!iconData) return null;
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}
+            dangerouslySetInnerHTML={{ __html: iconData.map(item => `<${item[0]} ${Object.entries(item[1]).map(([k, v]) => `${k}="${v}"`).join(' ')}></${item[0]}>`).join('') }}
+        />
+    );
+};
+
+const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const START_HOUR = 7;
+const END_HOUR = 24;
+const SLOT_HEIGHT = 100;
+const TOTAL_MINUTES = (END_HOUR - START_HOUR + 1) * 60;
+const DEFAULT_COLORS = ['#E59A9A', '#E5B981', '#DEE08C', '#A8D99C', '#8CCEDB', '#89AED9', '#A59BD9', '#D9A9D9', '#C2CDC9'];
+
+const MainSystem = () => {
+    const captureRef = useRef(null);
+    const [students, setStudents] = useState(() => {
+        const saved = localStorage.getItem('studycube_v_final_ultra');
+        return saved ? JSON.parse(saved) : [{ id: Date.now(), name: '신규 학생', schedules: [], isDeleted: false }];
+    });
+
+    const [selectedId, setSelectedId] = useState(null);
+    const [activeMenuId, setActiveMenuId] = useState(null); 
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [showTrash, setShowTrash] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterTitle, setFilterTitle] = useState('');
+    const [filterTag, setFilterTag] = useState('');
+
+    const [studentModal, setStudentModal] = useState({ open: false, editId: null, name: '' });
+    const [scheduleModal, setScheduleModal] = useState({ open: false, editId: null });
+    const [detailModal, setDetailModal] = useState({ open: false, item: null });
+    
+    const [tags, setTags] = useState(['인강', '자습', '학원', '수업', '과외']);
+    const [newTagInput, setNewTagInput] = useState('');
+    const [customColors, setCustomColors] = useState([]);
+    const [tempColor, setTempColor] = useState('#3b82f6');
+
+    const [sForm, setSForm] = useState({ title: '', days: [], startH: '09', startM: '00', endH: '10', endM: '00', tags: ['자습'], memo: '', color: DEFAULT_COLORS[0] });
+
+    useEffect(() => { localStorage.setItem('studycube_v_final_ultra', JSON.stringify(students)); }, [students]);
+
+    const current = useMemo(() => students.find(s => s.id === selectedId), [students, selectedId]);
+    const filteredSchedules = useMemo(() => {
+        if (!current) return [];
+        return current.schedules.filter(s => 
+            s.title.toLowerCase().includes(filterTitle.toLowerCase()) && 
+            (filterTag === '' || (s.tags && s.tags.some(t => t.toLowerCase().includes(filterTag.toLowerCase()))))
+        );
+    }, [current, filterTitle, filterTag]);
+
+    const statistics = useMemo(() => {
+        const total = filteredSchedules.reduce((acc, s) => {
+            const duration = (parseInt(s.endH)*60+parseInt(s.endM)) - (parseInt(s.startH)*60+parseInt(s.startM));
+            return acc + (duration * s.days.length);
+        }, 0);
+        return { total, avg: Math.round(total / 7) };
+    }, [filteredSchedules]);
+
+    const handleExport = async () => {
+        if (!captureRef.current || !current) return;
+        await document.fonts.ready;
+        html2canvas(captureRef.current, {
+            backgroundColor: "#ffffff",
+            scale: 3, 
+            useCORS: true,
+            allowTaint: true,
+            width: 1700,
+            windowWidth: 1700,
+            onclone: (clonedDoc) => {
+                const area = clonedDoc.querySelector('.export-area');
+                if (area) {
+                    area.style.height = 'auto'; area.style.overflow = 'visible';
+                    area.querySelectorAll('*').forEach(el => { el.style.lineHeight = '1.2'; el.style.verticalAlign = 'baseline'; });
+                    area.querySelectorAll('.stat-container').forEach(c => { c.style.display = 'flex'; c.style.alignItems = 'flex-end'; c.style.gap = '12px'; });
+                }
+            }
+        }).then(canvas => {
+            canvas.toBlob((blob) => { if (blob) saveAs(blob, `${current.name}_주간계획표.png`); }, 'image/png', 1.0);
+        });
+    };
+
+    const handleSaveStudent = () => {
+        if (!studentModal.name.trim()) return;
+        if (studentModal.editId) {
+            setStudents(prev => prev.map(s => s.id === studentModal.editId ? { ...s, name: studentModal.name } : s));
+        } else {
+            setStudents(prev => [...prev, { id: Date.now(), name: studentModal.name, schedules: [], isDeleted: false }]);
+        }
+        setStudentModal({ open: false, editId: null, name: '' });
+        setActiveMenuId(null);
+    };
+
+    const openScheduleModal = (item = null) => {
+        if (item) {
+            setSForm({ ...item, tags: item.tags || [] });
+            setScheduleModal({ open: true, editId: item.id });
+        } else {
+            setSForm({ title: '', days: [], startH: '09', startM: '00', endH: '10', endM: '00', tags: [tags[0]], memo: '', color: DEFAULT_COLORS[0] });
+            setScheduleModal({ open: true, editId: null });
+        }
+    };
+
+    const handleSaveSchedule = () => {
+        if (!sForm.title || sForm.days.length === 0) return;
+        const start = parseInt(sForm.startH)*60 + parseInt(sForm.startM);
+        const end = parseInt(sForm.endH)*60 + parseInt(sForm.endM);
+        if (end <= start) { alert("종료 시간은 시작보다 늦어야 합니다."); return; }
+        const newSchedules = scheduleModal.editId 
+            ? current.schedules.map(s => s.id === scheduleModal.editId ? { ...sForm, id: s.id } : s)
+            : [...current.schedules, { ...sForm, id: Date.now() }];
+        setStudents(prev => prev.map(s => s.id === selectedId ? { ...s, schedules: newSchedules } : s));
+        setScheduleModal({ open: false, editId: null });
+    };
+
+    const toggleTag = (t) => {
+        const currentTags = sForm.tags || [];
+        setSForm({ ...sForm, tags: currentTags.includes(t) ? currentTags.filter(tag => tag !== t) : [...currentTags, t] });
+    };
+
+    const formatTime = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+    return (
+        <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans text-slate-900" onClick={() => setActiveMenuId(null)}>
+            <aside className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-30 shadow-md">
+                <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                    <h1 className="text-2xl font-black italic tracking-tighter uppercase text-slate-800 mb-6 text-center font-sans">Study Cube</h1>
+                    <button onClick={() => setStudentModal({ open: true, editId: null, name: '' })} className="w-full bg-blue-600 py-4 rounded-2xl font-black text-lg text-white shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                        <Icon name="user-plus" size={24} /> 학생 등록
+                    </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                    <div className="relative mb-6">
+                        <Icon name="search" size={20} className="absolute left-4 top-4 text-slate-300" />
+                        <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="학생 검색..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-lg focus:ring-2 focus:ring-blue-400 outline-none font-bold shadow-inner" />
+                    </div>
+                    {students.filter(s => s.isDeleted === showTrash && s.name.includes(searchQuery)).map(s => (
+                        <div key={s.id} onClick={() => setSelectedId(s.id)} className={`group p-6 rounded-2xl cursor-pointer border-2 flex items-center justify-between relative transition-all ${selectedId === s.id ? 'bg-blue-50 border-blue-400 shadow-md scale-[1.02]' : 'bg-white border-transparent hover:border-slate-200 hover:bg-slate-50'}`}>
+                            <div className="font-black text-xl truncate flex-1 text-slate-800 font-sans">{s.name}</div>
+                            <button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === s.id ? null : s.id); }} className="p-2 text-slate-300 hover:text-slate-600 transition-colors"><Icon name="more-vertical" size={24} /></button>
+                            {activeMenuId === s.id && (
+                                <div className="absolute right-0 top-14 bg-white border border-slate-100 rounded-2xl shadow-2xl z-[100] p-2 w-44 animate-in fade-in zoom-in duration-150">
+                                    <button onClick={(e) => { e.stopPropagation(); setStudentModal({ open: true, editId: s.id, name: s.name }); }} className="w-full flex items-center gap-3 px-4 py-4 text-base font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors font-sans">이름 변경</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setStudents(prev => prev.map(x => x.id === s.id ? {...x, isDeleted: true} : x)); }} className="w-full flex items-center gap-3 px-4 py-4 text-base font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors font-sans">데이터 삭제</button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+                {selectedId && current && (
+                    <div className="h-[40%] border-t border-slate-200 flex flex-col bg-white overflow-hidden shadow-inner font-sans">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                            <h3 className="text-base font-black text-slate-500 uppercase tracking-widest">일정 목록</h3>
+                            <span className="text-sm font-black text-blue-600 bg-blue-100 px-3 py-1 rounded-full">{filteredSchedules.length} UNITS</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                            {filteredSchedules.map(sched => (
+                                <div key={sched.id} onClick={() => setDetailModal({ open: true, item: sched })} className="p-5 rounded-2xl border border-slate-100 hover:border-blue-200 cursor-pointer group bg-slate-50/30 transition-all shadow-sm">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: sched.color }}></div>
+                                        <div className="font-black text-lg text-slate-800 truncate">{sched.title}</div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 pl-7">
+                                        {(sched.tags || []).map(tag => <span key={tag} className="text-xs font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md">{tag}</span>)}
+                                        <span className="bg-slate-100 px-2 py-0.5 rounded text-xs font-black text-slate-500 ml-auto">{sched.startH}:{sched.startM}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </aside>
+            <main className="flex-1 flex flex-col relative bg-white overflow-hidden">
+                {current ? (
+                    <>
+                        <header className="h-24 border-b border-slate-100 flex items-center justify-between px-10 shrink-0 bg-white z-10 shadow-sm">
+                            <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100 shadow-inner">
+                                    <input type="text" placeholder="제목 필터" value={filterTitle} onChange={e => setFilterTitle(e.target.value)} className="bg-transparent px-4 py-2 text-lg font-black outline-none border-r border-slate-200 w-48" />
+                                    <input type="text" placeholder="태그 필터" value={filterTag} onChange={e => setFilterTag(e.target.value)} className="bg-transparent px-4 py-2 text-lg font-black outline-none w-48" />
+                                </div>
+                                <h2 className="text-2xl font-black text-slate-800 tracking-tighter uppercase italic">{current.name} 시간표</h2>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button onClick={handleExport} className="flex items-center gap-3 px-10 py-4 bg-emerald-500 text-white rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all hover:bg-emerald-600"><Icon name="download" size={24} /> 이미지 저장</button>
+                                <button onClick={() => setIsEditMode(!isEditMode)} className={`flex items-center gap-3 px-10 py-4 rounded-2xl font-black text-lg transition-all shadow-xl ${isEditMode ? 'bg-slate-900 text-white shadow-slate-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}><Icon name={isEditMode ? "check" : "edit-3"} size={24} /> {isEditMode ? '저장 종료' : '일정 편집'}</button>
+                            </div>
+                        </header>
+                        <div className="flex-1 overflow-auto bg-slate-50/50 p-12 custom-scrollbar">
+                            <div ref={captureRef} className="export-area bg-white p-16 rounded-[4rem] shadow-2xl border border-slate-100 mx-auto">
+                                <div className="mb-12 border-b-4 border-slate-900 pb-10 flex justify-between items-end">
+                                    <h1 className="text-4xl font-black text-slate-900 tracking-tight italic uppercase">{current.name} 주간 계획표</h1>
+                                    <span className="text-slate-400 font-black text-xl uppercase tracking-widest leading-none">| 스터디큐브</span>
+                                </div>
+                                <div className="flex gap-12">
+                                    <div className="w-80 shrink-0 space-y-10">
+                                        <div className="bg-slate-900 text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden">
+                                            <h3 className="text-[14px] font-black uppercase tracking-[0.3em] opacity-30 mb-10">CORE REPORT</h3>
+                                            <div className="space-y-12">
+                                                <div className="flex flex-col">
+                                                    <p className="text-[12px] font-black opacity-40 uppercase mb-4">Weekly Focus</p>
+                                                    <div className="stat-container font-black">
+                                                        <span className="text-6xl tracking-tighter stat-number">{Math.floor(statistics.total/60)}</span>
+                                                        <span className="text-2xl stat-unit">H</span>
+                                                        <span className="text-6xl tracking-tighter stat-number ml-12">{statistics.total%60}</span>
+                                                        <span className="text-2xl stat-unit">M</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <p className="text-[12px] font-black opacity-40 uppercase mb-4">Daily Average</p>
+                                                    <div className="stat-container text-blue-400 font-black">
+                                                        <span className="text-6xl tracking-tighter stat-number">{Math.floor(statistics.avg/60)}</span>
+                                                        <span className="text-2xl stat-unit">H</span>
+                                                        <span className="text-6xl tracking-tighter stat-number ml-12">{statistics.avg%60}</span>
+                                                        <span className="text-2xl stat-unit">M</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-5">
+                                            <h3 className="text-[14px] font-black text-slate-400 uppercase tracking-widest ml-1">INDEXING</h3>
+                                            {filteredSchedules.map(sched => (
+                                                <div key={sched.id} className="p-6 rounded-[2rem] border-2 border-slate-50 flex items-start gap-5 bg-white shadow-sm transition-transform hover:translate-x-1">
+                                                    <div className="w-3 h-16 rounded-full shrink-0" style={{ backgroundColor: sched.color }}></div>
+                                                    <div className="overflow-hidden flex-1 pt-1">
+                                                        <p className="font-black text-xl text-slate-800 truncate mb-1.5">{sched.title}</p>
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {(sched.tags || []).map(tag => <span key={tag} className="text-[10px] font-black text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded">{tag}</span>)}
+                                                            <span className="text-[10px] font-black text-slate-400 uppercase ml-auto">{sched.startH}:{sched.startM}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 grid-layout grid divide-x-2 divide-slate-100 border-2 border-slate-100 rounded-[3.5rem] overflow-hidden shadow-2xl bg-white">
+                                        <div className="bg-slate-50/50 flex flex-col text-center">
+                                            <div className="h-20 border-b-4 border-slate-900 flex items-center justify-center text-[14px] font-black text-slate-900 uppercase bg-white italic tracking-tighter">TIME</div>
+                                            {Array.from({ length: END_HOUR - START_HOUR + 1 }).map((_, i) => (
+                                                <div key={i} className="time-slot flex items-start justify-center pt-6 text-[18px] font-black text-slate-300">
+                                                    {START_HOUR + i < 24 ? START_HOUR + i : START_HOUR + i - 24}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {DAYS.map(day => (
+                                            <div key={day} className="flex flex-col relative group min-w-[160px]">
+                                                <div className="h-20 border-b-4 border-slate-900 flex items-center justify-center text-xl font-black text-slate-900 bg-white uppercase tracking-tighter">{day}요일</div>
+                                                <div className="flex-1 relative bg-white/40">
+                                                    {Array.from({ length: END_HOUR - START_HOUR + 1 }).map((_, i) => (<div key={i} className="time-slot border-dotted border-b border-slate-100"></div>))}
+                                                    {filteredSchedules.filter(a => a.days.includes(day)).map(a => {
+                                                        const start = (parseInt(a.startH) * 60 + parseInt(a.startM)) - (START_HOUR * 60);
+                                                        const dur = (parseInt(a.endH) * 60 + parseInt(a.endM)) - (parseInt(a.startH) * 60 + parseInt(a.startM));
+                                                        const totalH = (END_HOUR - START_HOUR + 1) * SLOT_HEIGHT;
+                                                        const topPos = (start / TOTAL_MINUTES) * totalH;
+                                                        const blockH = (dur / TOTAL_MINUTES) * totalH;
+                                                        return (
+                                                            <div key={a.id} onClick={() => isEditMode ? openScheduleModal(a) : setDetailModal({ open: true, item: a })} 
+                                                                className={`absolute left-1.5 right-1.5 rounded-3xl p-6 text-slate-900 shadow-xl border border-black/5 flex flex-col justify-start overflow-hidden transition-all hover:scale-[1.04] hover:z-20 cursor-pointer ${isEditMode ? 'ring-4 ring-blue-500/40 ring-offset-2' : ''}`}
+                                                                style={{ top: `${topPos}px`, height: `${blockH}px`, backgroundColor: a.color }}>
+                                                                <div className="flex flex-col h-full pointer-events-none schedule-block">
+                                                                    <div className="flex justify-between items-start mb-2">
+                                                                        <span className="truncate leading-tight font-black text-[18px] uppercase tracking-tighter">{a.title}</span>
+                                                                    </div>
+                                                                    {blockH > 65 && <div className="text-[12px] font-black opacity-80 tracking-tighter mb-2 flex items-center gap-1.5 whitespace-nowrap overflow-visible"><Icon name="clock" size={14} className="opacity-40" />{formatTime(a.startH, a.startM)} → {formatTime(a.endH, a.endM)}</div>}
+                                                                    {blockH > 85 && a.tags && a.tags.length > 0 && <div className="flex flex-wrap gap-1 mb-2">{a.tags.map(tag => (<span key={tag} className="bg-white/70 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase shrink-0 border border-black/5 shadow-sm text-slate-800">{tag}</span>))}</div>}
+                                                                    {blockH > 130 && a.memo && (<div className="text-[12px] font-bold leading-relaxed opacity-60 border-t border-black/10 pt-3 truncate-5">{a.memo}</div>)}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {isEditMode && (<button onClick={() => openScheduleModal()} className="absolute bottom-12 right-12 w-28 h-28 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all z-20 hover:bg-blue-700 shadow-blue-500/40"><Icon name="plus" size={56} /></button>)}
+                    </>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-300 bg-slate-50">
+                        <div className="w-56 h-56 bg-white rounded-[5rem] flex items-center justify-center shadow-inner mb-12 border border-slate-100"><Icon name="users" size={100} className="opacity-20 text-slate-400" /></div>
+                        <p className="font-black text-3xl text-slate-400 uppercase tracking-widest italic">학생 데이터를 먼저 선택해 주십시오</p>
+                    </div>
+                )}
+            </main>
+            {/* 모달 로직 생략 (기존 코드 유지) */}
+        </div>
+    );
+};
