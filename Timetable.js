@@ -12,12 +12,12 @@ const DEFAULT_TAGS = ['자습', '인강', '외부 학원', '수업', '상담'];
 const DEFAULT_COLORS = ['#ff7675', '#74b9ff', '#55efc4', '#ffeaa7', '#a29bfe', '#dfe6e9'];
 
 const App = () => {
+    // [2. 시스템 상태 관리]
     const [isAuth, setIsAuth] = useState(false); 
     const [dbClient, setDbClient] = useState(null);
     const [students, setStudents] = useState([]);
-    const [isInitialLoading, setIsInitialLoading] = useState(true); // 로딩 상태 강제 제어
+    const [isInitialLoading, setIsInitialLoading] = useState(true); 
 
-    // 기타 UI 상태
     const [selectedId, setSelectedId] = useState(null);
     const [trashMode, setTrashMode] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
@@ -35,7 +35,7 @@ const App = () => {
     
     const captureRef = useRef(null);
 
-    // [DB 연동: 예외 처리 강화]
+    // [3. DB 연동 엔진]
     useEffect(() => {
         if (isAuth && window.supabase) {
             const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -51,7 +51,7 @@ const App = () => {
                         isDeleted: row.data?.isDeleted || false
                     })));
                 }
-                setIsInitialLoading(false); // 데이터가 있든 없든 로딩 해제
+                setIsInitialLoading(false); 
             });
         }
     }, [isAuth]);
@@ -68,7 +68,7 @@ const App = () => {
         }
     };
 
-    // [데이터 연산: Null 방어]
+    // [4. 데이터 연산 및 헬퍼]
     const current = useMemo(() => students.find(s => s.id === selectedId) || null, [students, selectedId]);
     
     const { filteredSchedules, stats } = useMemo(() => {
@@ -86,15 +86,60 @@ const App = () => {
         backgroundColor: s.color
     });
 
+    const handleStudentAction = (id, action) => {
+        const target = students.find(s => s.id === id);
+        if (!target) return;
+        let updatedTarget = { ...target };
+        if (action === 'delete') updatedTarget.isDeleted = true;
+        if (action === 'restore') updatedTarget.isDeleted = false;
+        
+        if (action === 'hardDelete') {
+            const nextStudents = students.filter(s => s.id !== id);
+            setStudents(nextStudents);
+            if (dbClient) dbClient.from('schedules').delete().eq('id', id).then();
+            if (selectedId === id) setSelectedId(null);
+        } else {
+            const nextStudents = students.map(s => s.id === id ? updatedTarget : s);
+            syncToDB(nextStudents, updatedTarget);
+        }
+    };
+
+    const saveStudent = () => {
+        if (!studentModal.name.trim()) return;
+        let newOrUpdated;
+        let nextStudents;
+        if (studentModal.id) {
+            newOrUpdated = { ...students.find(s => s.id === studentModal.id), name: studentModal.name };
+            nextStudents = students.map(s => s.id === studentModal.id ? newOrUpdated : s);
+        } else {
+            newOrUpdated = { id: Date.now(), name: studentModal.name, schedules: [], isDeleted: false };
+            nextStudents = [...students, newOrUpdated];
+        }
+        syncToDB(nextStudents, newOrUpdated);
+        setStudentModal({ open: false, id: null, name: '' });
+    };
+
+    const saveSchedule = () => {
+        if (!sForm.title || !sForm.days || sForm.days.length === 0) return alert('제목과 요일을 지정하십시오.');
+        const start = parseInt(sForm.startH)*60 + parseInt(sForm.startM);
+        const end = parseInt(sForm.endH)*60 + parseInt(sForm.endM);
+        if (end <= start) return alert('종료 시간 연산 오류');
+
+        const newSch = { ...sForm, id: scheduleModal.id || Date.now() };
+        const updatedSchList = scheduleModal.id ? current.schedules.map(s => s.id === scheduleModal.id ? newSch : s) : [...current.schedules, newSch];
+        const updatedStudent = { ...current, schedules: updatedSchList };
+        
+        syncToDB(students.map(s => s.id === selectedId ? updatedStudent : s), updatedStudent);
+        setScheduleModal({ open: false, id: null });
+    };
+
     const handleExport = (format) => { if (window.ExportSystem && captureRef.current) window.ExportSystem.generate(captureRef.current, current.name, format); };
 
-    // [시스템 렌더링 분기]
-    // 1. 보안 통과 전
+    // [5. 렌더링 분기]
     if (!isAuth) {
         return window.AuthSystem ? window.AuthSystem.renderGate(setIsAuth) : <div className="p-10 font-black">Auth Loading...</div>;
     }
 
-    // 2. 보안은 통과했으나 DB 연결 중
     if (isInitialLoading) {
         return (
             <div className="flex h-screen items-center justify-center bg-[#0f172a] text-white">
@@ -106,10 +151,8 @@ const App = () => {
         );
     }
 
-    // 3. 메인 시스템 가동 (여기서부터는 데이터 유실 걱정 없음)
     return (
         <div className="flex h-screen w-full bg-slate-100 font-sans overflow-hidden">
-            {/* [나머지 UI 로직은 이전과 동일함] */}
             <aside className="w-72 bg-white border-r border-slate-200 flex flex-col z-20 shadow-sm">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                     <h1 className="text-xl font-bold tracking-tight">STUDY CUBE</h1>
@@ -188,14 +231,16 @@ const App = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {isEditMode && (
+                            <button onClick={() => { setSForm({title:'', days:[], startH:'09', startM:'00', endH:'10', endM:'00', tags:[], color:customColors[0], memo:''}); setScheduleModal({open:true, id:null}); }} 
+                                className="absolute bottom-10 right-10 w-16 h-16 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center text-4xl font-light hover:bg-blue-700 active:scale-90 hover:rotate-90 transition-all z-30">+</button>
+                        )}
                     </>
                 ) : <div className="flex-1 flex flex-col items-center justify-center text-slate-300 font-black text-3xl tracking-[0.5em] uppercase opacity-10">Select Student</div>}
             </main>
-            {/* [이후 학생/일정 모달 코드는 동일하게 유지] */}
-        </div>
-    );
-};
-            {/* 학생 등록 모달 */}
+
+            {/* 모달 섹션 */}
             {studentModal.open && (
                 <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl flex items-center justify-center z-[500]">
                     <div className="bg-white p-16 rounded-[4rem] w-full max-w-lg shadow-2xl text-center">
@@ -208,8 +253,22 @@ const App = () => {
                     </div>
                 </div>
             )}
-            
-            {/* 일정 폼 및 상세 모달은 구조 동일하게 유지 */}
+
+            {scheduleModal.open && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white rounded-[3rem] w-[650px] overflow-hidden shadow-2xl flex flex-col animate-in zoom-in duration-200">
+                        <div className="h-6 w-full" style={{backgroundColor: sForm.color}}></div>
+                        <div className="p-10 space-y-8">
+                            <input type="text" placeholder="일정 제목 입력" value={sForm.title} onChange={e=>setSForm({...sForm, title:e.target.value})} className="w-full text-4xl font-black border-b-4 border-slate-100 pb-4 outline-none focus:border-blue-500 transition-all" />
+                            {/* ... 요일/시간 설정 UI 생략 ... */}
+                        </div>
+                        <div className="flex p-6 bg-slate-50 gap-4">
+                            <button onClick={()=>setScheduleModal({open:false, id:null})} className="flex-1 py-5 font-black text-slate-400 uppercase">Cancel</button>
+                            <button onClick={saveSchedule} className="flex-[2] py-5 font-black text-white bg-blue-600 rounded-2xl hover:bg-blue-700 shadow-xl active:scale-95 transition-all uppercase">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
