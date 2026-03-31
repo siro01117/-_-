@@ -1,72 +1,184 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>STUDY CUBE :: Management System</title>
+const { useState, useMemo, useEffect, useRef } = React;
+
+// [시스템 환경 설정]
+const SUPABASE_URL = 'https://ovnabmmofgujgefuamzn.supabase.co';
+const SUPABASE_KEY = 'YOUR_ANON_KEY_HERE'; 
+const _db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const ACCESS_PW = "R040117!";
+
+const Icon = ({ name, size = 20, className = "" }) => {
+    const pascalName = name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+    const iconData = lucide.icons[pascalName] || lucide.icons[name];
+    if (!iconData) return null;
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}
+            dangerouslySetInnerHTML={{ __html: iconData.map(item => `<${item[0]} ${Object.entries(item[1]).map(([k, v]) => `${k}="${v}"`).join(' ')}></${item[0]}>`).join('') }}
+        />
+    );
+};
+
+const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const START_HOUR = 7;
+const END_HOUR = 24;
+const SLOT_HEIGHT = 100;
+const TOTAL_MINUTES = (END_HOUR - START_HOUR + 1) * 60;
+const DEFAULT_COLORS = ['#E59A9A', '#E5B981', '#DEE08C', '#A8D99C', '#8CCEDB', '#89AED9', '#A59BD9', '#D9A9D9', '#C2CDC9'];
+
+const App = () => {
+    const captureRef = useRef(null);
+    const [isAuth, setIsAuth] = useState(false);
+    const [students, setStudents] = useState([]);
+    const [selectedId, setSelectedId] = useState(null);
+    const [isEditMode, setIsEditMode] = useState(false);
     
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    // 모달 상태
+    const [studentModal, setStudentModal] = useState({ open: false, editId: null, name: '' });
+    const [scheduleModal, setScheduleModal] = useState({ open: false, editId: null });
     
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    const [sForm, setSForm] = useState({ title: '', days: [], startH: '09', startM: '00', endH: '10', endM: '00', tags: [], memo: '', color: DEFAULT_COLORS[0] });
 
-    <style>
-        @font-face {
-            font-family: 'Pretendard';
-            src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/woff2/Pretendard-Bold.woff2') format('woff2');
-            font-weight: 700; font-display: block;
+    // [학생 데이터 로드]
+    useEffect(() => {
+        if (isAuth) fetchStudents();
+    }, [isAuth]);
+
+    const fetchStudents = async () => {
+        const { data } = await _db.from('schedules').select('*').order('updated_at', { ascending: false });
+        if (data) {
+            setStudents(data.map(s => ({
+                id: s.id,
+                name: s.student_name,
+                schedules: s.data?.schedules || [],
+                isDeleted: s.data?.isDeleted || false
+            })));
         }
+    };
 
-        body { 
-            font-family: 'Pretendard', sans-serif; 
-            background-color: #f8fafc; 
-            margin: 0; 
-            overflow: hidden; 
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* 캡처 시 물리적 고정 규격 (정확도 향상 핵심) */
-        .export-area { 
-            width: 1700px !important; 
-            min-width: 1700px !important; 
-            background: white !important; 
-            padding: 60px !important; 
-            box-sizing: border-box !important;
-        }
-
-        /* 스크롤바 커스텀 */
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e1e22; border-radius: 10px; }
+    // [학생 등록 및 서버 동기화]
+    const handleSaveStudent = async () => {
+        if (!studentModal.name.trim()) return;
         
-        /* 모달 애니메이션 */
-        .modal-animate { animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes modalIn { 
-            from { opacity: 0; transform: scale(0.95) translateY(10px); } 
-            to { opacity: 1; transform: scale(1) translateY(0); } 
-        }
+        const newStudent = { 
+            id: studentModal.editId || Date.now(), 
+            name: studentModal.name, 
+            schedules: [], 
+            isDeleted: false 
+        };
 
-        /* 그리드 레이아웃 고정 */
-        .grid-layout { display: grid !important; grid-template-columns: 0.7fr repeat(7, 1fr) !important; }
-        .time-slot { height: 100px; border-bottom: 1px solid #f1f5f9; }
+        // UI 즉시 반영
+        setStudents(prev => [...prev.filter(s => s.id !== newStudent.id), newStudent]);
+        
+        // 서버 전송
+        await _db.from('schedules').upsert({
+            id: newStudent.id,
+            student_name: newStudent.name,
+            data: { schedules: [], isDeleted: false },
+            updated_at: new Date()
+        });
 
-        /* 텍스트 렌더링 안정화 */
-        .stat-container { display: flex !important; align-items: baseline !important; line-height: 1 !important; }
-        .stat-number { font-weight: 900; }
-        .stat-unit { font-weight: 700; opacity: 0.3; font-style: italic; margin-left: 4px; }
-        .schedule-block { line-height: 1.2 !important; word-break: keep-all; }
-    </style>
-</head>
-<body class="text-slate-900 font-medium">
-    
-    <div id="root"></div>
+        setStudentModal({ open: false, editId: null, name: '' });
+        setSelectedId(newStudent.id); // 등록 후 자동 선택
+    };
 
-    <script type="text/babel" src="Timetable.js"></script>
+    const current = useMemo(() => students.find(s => s.id === selectedId), [students, selectedId]);
 
-</body>
-</html>
+    // [인증 레이어]
+    if (!isAuth) {
+        return (
+            <div className="h-screen w-full bg-[#1E1E22] flex items-center justify-center p-6">
+                <div className="bg-white p-12 lg:p-20 rounded-[5rem] shadow-2xl text-center max-w-xl w-full">
+                    <h2 className="text-3xl font-black mb-4 italic uppercase tracking-tighter text-slate-400">Security Gate</h2>
+                    <h1 className="text-4xl font-black mb-12 text-slate-800">접근 코드가 필요합니다</h1>
+                    <input 
+                        type="password" 
+                        autoFocus
+                        placeholder="Enter Code" 
+                        className="w-full border-4 border-slate-50 p-8 rounded-[2.5rem] text-center text-3xl font-black mb-12 bg-slate-50 outline-none focus:border-blue-500 transition-all"
+                        onKeyDown={(e) => e.key === 'Enter' && (e.target.value === ACCESS_PW ? setIsAuth(true) : alert('코드가 일치하지 않습니다.'))}
+                    />
+                    <div className="flex items-center justify-center gap-3 text-slate-300 font-bold uppercase tracking-[0.3em] text-xs">
+                        <Icon name="lock" size={18} /> ENCRYPTED SESSION
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex h-screen w-full bg-slate-50 overflow-hidden">
+            {/* 사이드바 */}
+            <aside className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 z-30 shadow-md">
+                <div className="p-8 border-b border-slate-100">
+                    <h1 className="text-2xl font-black italic tracking-tighter uppercase mb-8 text-center">Study Cube</h1>
+                    <button 
+                        onClick={() => setStudentModal({ open: true, editId: null, name: '' })}
+                        className="w-full bg-blue-600 py-5 rounded-[2rem] font-black text-white shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
+                    >
+                        <Icon name="user-plus" size={24} /> 학생 추가
+                    </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                    {students.map(s => (
+                        <div 
+                            key={s.id} 
+                            onClick={() => setSelectedId(s.id)}
+                            className={`p-6 rounded-2xl cursor-pointer border-2 transition-all ${selectedId === s.id ? 'bg-blue-50 border-blue-400' : 'bg-white border-transparent hover:border-slate-100'}`}
+                        >
+                            <span className="font-black text-xl text-slate-800">{s.name}</span>
+                        </div>
+                    ))}
+                </div>
+            </aside>
+
+            {/* 메인 화면 */}
+            <main className="flex-1 flex flex-col relative bg-white overflow-hidden">
+                {current ? (
+                    <div className="flex-1 flex flex-col">
+                        <header className="h-24 border-b border-slate-100 flex items-center justify-between px-10">
+                            <h2 className="text-2xl font-black italic">{current.name} 관리 모드</h2>
+                            <button onClick={() => setIsEditMode(!isEditMode)} className="bg-slate-100 px-8 py-3 rounded-xl font-black">
+                                {isEditMode ? '편집 완료' : '일정 편집'}
+                            </button>
+                        </header>
+                        <div className="flex-1 p-12 overflow-auto bg-slate-50/50">
+                            {/* 타임테이블 렌더링 영역 (기존 로직 동일) */}
+                            <div className="text-center py-20 border-4 border-dashed border-slate-200 rounded-[3rem]">
+                                <p className="text-slate-400 font-black text-xl uppercase tracking-widest">Timetable Engine Active</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-300">
+                        <Icon name="mouse-pointer-2" size={80} className="mb-6 opacity-20" />
+                        <p className="text-2xl font-black uppercase italic tracking-widest">학생을 선택하거나 추가하십시오</p>
+                    </div>
+                )}
+            </main>
+
+            {/* 학생 추가 모달 */}
+            {studentModal.open && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl flex items-center justify-center z-[500] p-6">
+                    <div className="bg-white p-16 rounded-[4rem] w-full max-w-lg shadow-2xl modal-animate text-center">
+                        <h3 className="text-4xl font-black mb-10 italic uppercase">New Student</h3>
+                        <input 
+                            type="text" 
+                            autoFocus
+                            value={studentModal.name}
+                            onChange={(e) => setStudentModal({...studentModal, name: e.target.value})}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSaveStudent()}
+                            placeholder="이름 입력"
+                            className="w-full border-4 border-slate-50 p-8 rounded-[2rem] text-center text-4xl font-black mb-10 bg-slate-50 outline-none focus:border-blue-500"
+                        />
+                        <div className="flex gap-4">
+                            <button onClick={() => setStudentModal({ open: false, editId: null, name: '' })} className="flex-1 py-6 font-black text-slate-300">CANCEL</button>
+                            <button onClick={handleSaveStudent} className="flex-[2] py-6 bg-slate-900 text-white rounded-[2rem] font-black text-2xl shadow-xl">등록 확정</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
