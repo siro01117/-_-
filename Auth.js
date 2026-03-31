@@ -2,10 +2,10 @@ window.AuthSystem = {
     renderGate: (setIsAuth) => {
         const { useState, useEffect } = React;
         const [input, setInput] = useState("");
-        const ACCESS_PW = "R040117!"; // 설정하신 비밀번호
+        const ACCESS_PW = "R040117!";
 
         const handleKeyDown = (e) => {
-            // 1. 엔터 키: 검증 실행
+            // 1. 엔터 키: 인가 로직 실행
             if (e.key === 'Enter') {
                 if (input === ACCESS_PW) {
                     setIsAuth(true);
@@ -16,15 +16,13 @@ window.AuthSystem = {
                 return;
             }
 
-            // 2. 백스페이스 키: 마지막 글자 삭제
+            // 2. 백스페이스 키: 데이터 무결성 보장 (제어 문자로 인식 방지)
             if (e.key === 'Backspace') {
                 setInput(prev => prev.slice(0, -1));
                 return;
             }
 
-            // 3. [핵심 교정] 입력 필터링
-            // e.key의 길이가 1인 것만 허용 (Shift, Control, Alt, Tab 등 제어 문자 제외)
-            // 정규표현식을 사용해 '출력 가능한 문자'만 입력값으로 수용
+            // 3. 입력 필터링: 출력 가능한 일반 문자열만 수용
             if (e.key.length === 1) {
                 setInput(prev => prev + e.key);
             }
@@ -44,10 +42,18 @@ window.AuthSystem = {
                     <h2 className="text-slate-300 font-black tracking-[0.2em] text-[10px] mb-2 uppercase">Security Gate</h2>
                     <h1 className="text-3xl font-black text-slate-800 mb-8 tracking-tighter">접근 코드가 필요합니다</h1>
                     
-                    {/* 시각적 피드백 구역 (입력된 글자 수만큼 점 표시) */}
-                    <div className="flex justify-center gap-2 mb-8 h-4">
-                        {input.split('').map((_, i) => (
-                            <div key={i} className="w-3 h-3 bg-blue-500 rounded-full animate-bounce"></div>
+                    {/* [기능 복원] 시각적 지연 마스킹 구역 */}
+                    <div className="flex justify-center gap-2 mb-8 h-8 items-center">
+                        {input.split('').map((char, i) => (
+                            <div key={i} className="relative flex items-center justify-center w-4 h-4">
+                                {i === input.length - 1 ? (
+                                    // 마지막 글자는 실제 텍스트로 노출 (다음 글자 입력 시 점으로 변환됨)
+                                    <span className="text-blue-600 font-black text-xl animate-in fade-in duration-200">{char}</span>
+                                ) : (
+                                    // 이전 글자들은 보안 점으로 표시
+                                    <div className="w-3 h-3 bg-slate-800 rounded-full"></div>
+                                )}
+                            </div>
                         ))}
                         {input.length === 0 && <span className="text-slate-200 font-bold tracking-widest text-sm uppercase">Enter Code</span>}
                     </div>
