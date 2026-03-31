@@ -12,19 +12,22 @@ const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const DEFAULT_TAGS = ['자습', '인강', '외부 학원', '수업', '상담'];
 const DEFAULT_COLORS = ['#ff7675', '#74b9ff', '#55efc4', '#ffeaa7', '#a29bfe', '#dfe6e9'];
 
-// [모듈 1: 보안 게이트웨이 (내장형)]
-const AuthGate = ({ onAuth }) => {
-    const [pwd, setPwd] = useState('');
-    const verify = () => pwd === ACCESS_PW ? onAuth(true) : alert("보안 인가 실패: 코드가 일치하지 않습니다.");
+/* [App 컴포넌트 내부] */
+const App = () => {
+    const [isAuth, setIsAuth] = useState(false);
+    
+    // ... 기타 상태값들
+
+    // [Significance: 외부 보안 모듈(Auth.js) 인터페이스 호출]
+    // 내장된 AuthGate 대신 window.AuthSystem(4번 모듈)의 렌더링 엔진을 사용함
+    if (!isAuth) {
+        return window.AuthSystem.renderGate(setIsAuth);
+    }
+
+    // 이후 통과 시 메인 시스템(Timetable) 렌더링
     return (
-        <div className="fixed inset-0 bg-[#1e293b] flex items-center justify-center z-[9999]">
-            <div className="bg-white p-12 rounded-[3rem] shadow-2xl text-center w-96">
-                <h2 className="text-slate-400 font-black tracking-widest text-sm mb-2 uppercase">System Locked</h2>
-                <h1 className="text-3xl font-black text-slate-800 mb-8">접근 코드 입력</h1>
-                <input type="password" value={pwd} onChange={e=>setPwd(e.target.value)} onKeyDown={e=>e.key==='Enter'&&verify()} autoFocus
-                    className="w-full border-4 border-slate-100 p-4 rounded-2xl text-center text-2xl font-black mb-6 focus:border-blue-500 outline-none" />
-                <button onClick={verify} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all">UNLOCK SYSTEM</button>
-            </div>
+        <div className="flex h-screen ...">
+            {/* 시스템 본체 로직 */}
         </div>
     );
 };
