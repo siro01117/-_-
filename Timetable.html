@@ -8,43 +8,71 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <style>
-        /* 시스템 공통 스타일 */
+        /* 시스템 본질적 디자인 규격 */
         @font-face {
             font-family: 'Pretendard';
             src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/woff2/Pretendard-Bold.woff2') format('woff2');
             font-weight: 700; font-display: block;
         }
-        body { margin: 0; font-family: 'Pretendard', sans-serif; background-color: #f8fafc; overflow: hidden; }
-        
-        /* 캡처 시 레이아웃 고정을 위한 물리적 규격 */
+
+        body { 
+            margin: 0; 
+            font-family: 'Pretendard', sans-serif; 
+            background-color: #f8fafc; 
+            overflow: hidden; 
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* [A4 출력 규격 물리적 정의] - Export.js 연산의 기준점 */
         .export-area { 
-            width: 1700px !important; 
-            min-width: 1700px !important; 
-            background: white !important; 
-            padding: 60px !important; 
+            width: 1240px !important;       /* A4 150DPI 규격 너비 */
+            min-height: 1754px !important;  /* A4 150DPI 규격 높이 */
+            background: #ffffff !important;
+            padding: 80px !important;
             box-sizing: border-box !important;
+            position: relative;
+            margin: 0 auto;
+            box-shadow: 0 40px 100px rgba(0,0,0,0.05);
+        }
+
+        /* 시간표 그리드 시스템 레이아웃 */
+        .grid-layout { 
+            display: grid !important; 
+            grid-template-columns: 0.7fr repeat(7, 1fr) !important; 
         }
         
-        /* 시간표 그리드 레이아웃 */
-        .grid-layout { display: grid !important; grid-template-columns: 0.7fr repeat(7, 1fr) !important; }
-        .time-slot { height: 100px; border-bottom: 1px solid #f1f5f9; }
-        
-        /* 스크롤바 커스텀 */
+        .time-slot { 
+            height: 100px; 
+            border-bottom: 1px solid #f1f5f9; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 커스텀 스크롤바 (사이드바용) */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e1e22; border-radius: 10px; }
         
-        /* 애니메이션 */
-        .modal-animate { animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        /* 모달 및 UI 애니메이션 프로토콜 */
+        .modal-animate { 
+            animation: modalIn 0.5s cubic-bezier(0.16, 1, 0.3, 1); 
+        }
+        @keyframes modalIn { 
+            from { opacity: 0; transform: scale(0.98) translateY(20px); } 
+            to { opacity: 1; transform: scale(1) translateY(0); } 
+        }
+
+        /* 출력 시 인터페이스 숨김 */
+        .no-print { display: none !important; }
     </style>
 </head>
 <body>
