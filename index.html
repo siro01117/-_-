@@ -8,30 +8,54 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/woff2/Pretendard-Black.woff2" rel="stylesheet">
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
     <style>
-        body { font-family: 'Pretendard', sans-serif; -webkit-font-smoothing: antialiased; margin: 0; padding: 0; overflow: hidden; }
+        @font-face {
+            font-family: 'Pretendard';
+            src: url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/woff2/Pretendard-Bold.woff2') format('woff2');
+            font-weight: 700; font-display: block;
+        }
+        body { font-family: "Pretendard", sans-serif; -webkit-font-smoothing: antialiased; margin: 0; padding: 0; overflow: hidden; }
+        
+        /* 메인 엔진 전용 스타일 */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .modal-animate { animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .time-slot { height: 100px; border-bottom: 1px solid #f1f5f9; }
+        .export-area { width: 1700px !important; min-width: 1700px !important; background: white !important; padding: 60px !important; box-sizing: border-box !important; }
+        .grid-layout { display: grid !important; grid-template-columns: 0.7fr repeat(7, 1fr) !important; }
+        .stat-container { display: block !important; line-height: 1 !important; }
+        .stat-number { display: inline !important; font-weight: 900; vertical-align: baseline; }
+        .stat-unit { display: inline !important; font-weight: 700; vertical-align: baseline; opacity: 0.3; font-style: italic; }
+        .schedule-block { display: block !important; line-height: 1.2 !important; word-break: keep-all; transform: translateY(-1px); }
     </style>
 </head>
-<body class="overflow-hidden">
+<body>
     <div id="root"></div>
 
     <script type="text/babel" src="MainSystem.js"></script>
     <script type="text/babel" src="StartPage.js"></script>
+    
     <script type="text/babel">
         // [시스템 라이프사이클 제어부]
         const App = () => {
-            // 시작 상태를 관리하는 상태 엔진 (View State)
             const [isStarted, setIsStarted] = React.useState(false);
+            
+            // 시작 버튼 누르기 전 미리 로드 확인
+            React.useEffect(() => {
+                if (typeof lucide === 'undefined') {
+                    console.error("Lucide 라이브러리 로드 실패");
+                }
+            }, []);
 
-            // 평형 상태 유지: isStarted가 true이면 메인 시스템, false이면 시작 페이지 렌더링
-            return isStarted ? (
-                <MainSystem /> 
-            ) : (
-                <StartPage onStart={() => setIsStarted(true)} />
-            );
+            return isStarted ? <MainSystem /> : <StartPage onStart={() => setIsStarted(true)} />;
         };
-        // 최상위 노드에 주입
         ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
