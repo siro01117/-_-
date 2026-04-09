@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+/* ────────────────────────────────────────────────────────────
+   CSS 변수 - 라이트 모드 (기본값)
+──────────────────────────────────────────────────────────── */
+:root {
+  --sc-bg:      #F5F5F3;
+  --sc-surface: #FFFFFF;
+  --sc-raised:  #EFEFED;
+  --sc-border:  #E5E5E3;
+  --sc-white:   #141414;   /* 텍스트 색 */
+  --sc-gray:    #666666;
+  --sc-dim:     #AAAAAA;
+  --sc-green:   #00B85C;
+  --sc-green-d: #009A4C;
+  /* 카드 전용 */
+  --card-spot:  rgba(0, 184, 92, 0.08);
+  --card-glow:  rgba(0, 184, 92, 0.15);
+}
+
+/* ────────────────────────────────────────────────────────────
+   CSS 변수 - 다크 모드
+──────────────────────────────────────────────────────────── */
+.dark {
+  --sc-bg:      #141414;
+  --sc-surface: #1C1C1C;
+  --sc-raised:  #222222;
+  --sc-border:  #2A2A2A;
+  --sc-white:   #FFFFFF;
+  --sc-gray:    #999999;
+  --sc-dim:     #555555;
+  --sc-green:   #00FF85;
+  --sc-green-d: #00CC6A;
+  --card-spot:  rgba(0, 255, 133, 0.08);
+  --card-glow:  rgba(0, 255, 133, 0.15);
+}
+
+/* ────────────────────────────────────────────────────────────
+   베이스
+──────────────────────────────────────────────────────────── */
+@layer base {
+  * { box-sizing: border-box; }
+  html {
+    scroll-behavior: smooth;
+    /* 테마 전환 시 부드럽게 */
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  body {
+    background-color: var(--sc-bg);
+    color: var(--sc-white);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
+   유틸리티
+──────────────────────────────────────────────────────────── */
+@layer utilities {
+  /* stagger delays */
+  .delay-50  { animation-delay: 50ms; }
+  .delay-100 { animation-delay: 100ms; }
+  .delay-150 { animation-delay: 150ms; }
+  .delay-200 { animation-delay: 200ms; }
+  .delay-250 { animation-delay: 250ms; }
+  .delay-300 { animation-delay: 300ms; }
+  .delay-350 { animation-delay: 350ms; }
+  .delay-400 { animation-delay: 400ms; }
+
+  /* ── 모듈 카드 ──────────────────────────── */
+  .module-card {
+    position: relative;
+    background: var(--sc-surface);
+    border: 1px solid var(--sc-border);
+    overflow: hidden;
+    transition:
+      transform       0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+      border-color    0.2s ease,
+      box-shadow      0.2s ease,
+      background-color 0.3s ease;
+  }
+
+  /* 커서 스포트라이트 */
+  .module-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle 100px at var(--mx, 50%) var(--my, 50%),
+      var(--card-spot) 0%,
+      transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .module-card:hover::before { opacity: 1; }
+  .module-card:hover {
+    border-color: var(--card-glow);
+    box-shadow: 0 0 0 1px var(--card-glow), 0 8px 32px rgba(0,0,0,0.12);
+    transform: translateY(-4px) scale(1.02);
+  }
+  .module-card:active {
+    transform: translateY(0) scale(0.96) !important;
+    transition-duration: 0.12s !important;
+  }
+  .module-card > * { position: relative; z-index: 1; }
+
+  /* ── 섹션 레이블 ──────────────────────── */
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sc-dim);
+  }
+  .section-label::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 12px;
+    background: var(--sc-green);
+    border-radius: 2px;
+  }
+
+  /* ── 인풋 ──────────────────────────────── */
+  .sc-input {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    color: var(--sc-white);
+    background: var(--sc-surface);
+    border: 1px solid var(--sc-border);
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
+  }
+  .sc-input::placeholder { color: var(--sc-dim); }
+  .sc-input:focus {
+    border-color: var(--sc-green);
+    box-shadow: 0 0 0 3px var(--card-spot);
+  }
+  /* time input 색상 보정 */
+  .sc-input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.6);
+    cursor: pointer;
+  }
+  .dark .sc-input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.5);
+  }
+  /* select 화살표 커스텀 */
+  .sc-input[type="time"],
+  .sc-input select,
+  select.sc-input {
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  /* ── 테마 토글 버튼 ────────────────────── */
+  .theme-toggle {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: var(--sc-raised);
+    border: 1px solid var(--sc-border);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s ease, border-color 0.3s ease;
+    flex-shrink: 0;
+  }
+  .theme-toggle.active { background: var(--sc-green); border-color: var(--sc-green); }
+  .theme-toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background: var(--sc-white);
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s ease;
+  }
+  .theme-toggle.active .theme-toggle-knob { transform: translateX(20px); }
+
+  /* ── 시간표 스크롤바 (다크모드 친화적) ─── */
+  .sc-timetable-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+  .sc-timetable-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .sc-timetable-scroll::-webkit-scrollbar-thumb {
+    background: var(--sc-border);
+    border-radius: 10px;
+  }
+  .sc-timetable-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--sc-dim);
+  }
+  /* Firefox */
+  .sc-timetable-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sc-border) transparent;
+  }
+}
