@@ -32,7 +32,11 @@ interface CellInfo {
   teacherName?:  string;
   startTime?:    string;
   endTime?:      string;
-  notes?:        string;   // 수정 시 상담 정보 pre-fill용
+  notes?:        string;
+  // 상담 전용 필드 (수정 시 pre-fill용)
+  consultingStudent?:      string;
+  consultingTeacher?:      string;
+  consultingTeacherColor?: string;
   isOverride?:   boolean;
 }
 
@@ -366,11 +370,10 @@ export default function EditModal({
     setSelectedDays([cell.day as DayKey]);
     setSelectedCourse(null);
     setAddType("permanent");
-    // 수정 시 상담 정보 pre-fill (notes = "student||teacher||color")
-    if (cell.notes) {
-      const parts = cell.notes.split("||");
+    // 수정 시 상담 정보 pre-fill (새 컬럼 기반)
+    if (cell.consultingStudent) {
       setScheduleKind("consulting");
-      setStudentName(parts[0] ?? "");
+      setStudentName(cell.consultingStudent);
     } else {
       setScheduleKind("class");
       setStudentName("");

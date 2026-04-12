@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import ScheduleGrid,   { ScheduleEntry, CellClickInfo } from "./ScheduleGrid";
@@ -9,6 +10,7 @@ import ClassroomManagerModal                              from "./ClassroomManag
 import ScheduleDetailModal, { DetailCellInfo, DeleteData } from "./ScheduleDetailModal";
 import { ViewMode, DayKey, getMonday }                     from "./constants";
 import ThemeToggle                                          from "@/components/ui/ThemeToggle";
+import { HomeIcon, SearchIcon }                            from "@/components/ui/Icons";
 
 // ── 타입 ──────────────────────────────────────────────────────
 interface Classroom { id: string; name: string; floor?: number; }
@@ -21,12 +23,40 @@ interface RawSchedule {
   effective_from: string;
   effective_until?: string | null;
   notes?:         string | null;
+  // 상담 전용 컬럼
+  consulting_student?:       string | null;
+  consulting_teacher?:       string | null;
+  consulting_teacher_color?: string | null;
   courses?: {
     id: string; name: string; subject?: string; instructor_id?: string; accent_color?: string;
     enrolled_names?: string[];
     instructors?: { id: string; name: string; color?: string };
   };
   classrooms?: { id: string; name: string };
+}
+
+// override 전용 타입 — any 제거
+interface RawOverride {
+  id:               string;
+  classroom_id?:    string;
+  day:              DayKey;
+  start_time?:      string;
+  end_time?:        string;
+  is_cancelled:     boolean;
+  override_type:    string;
+  apply_from:       string;
+  apply_until?:     string | null;
+  weeks_count?:     number;
+  base_schedule_id?: string;
+  // 상담 전용 컬럼
+  consulting_student?:       string | null;
+  consulting_teacher?:       string | null;
+  consulting_teacher_color?: string | null;
+  courses?: {
+    id: string; name: string; subject?: string; accent_color?: string;
+    enrolled_names?: string[];
+    instructors?: { id: string; name: string; color?: string };
+  };
 }
 
 interface Props {
@@ -45,19 +75,19 @@ function normalize(s: RawSchedule): ScheduleEntry {
     course_id:       s.courses?.id,
     course_name:     s.courses?.name,
     course_subject:  s.courses?.subject,
-    // 상담 일정은 notes에서 teacher_name/color 복원 (필터링에 활용)
-    teacher_name:    s.courses?.instructors?.name
-                       ?? (s.notes ? (s.notes.split("||")[1] || undefined) : undefined),
-    teacher_color:   s.courses?.instructors?.color
-                       ?? (s.notes ? (s.notes.split("||")[2] || undefined) : undefined),
+    teacher_name:    s.courses?.instructors?.name  ?? (s.consulting_teacher || undefined),
+    teacher_color:   s.courses?.instructors?.color ?? (s.consulting_teacher_color || undefined),
     course_accent:   s.courses?.accent_color,
     enrolled_names:  s.courses?.enrolled_names ?? [],
     notes:           s.notes ?? undefined,
+    consulting_student:       s.consulting_student || undefined,
+    consulting_teacher:       s.consulting_teacher || undefined,
+    consulting_teacher_color: s.consulting_teacher_color || undefined,
     is_override:     false,
   };
 }
 
-function normalizeOverride(o: any, classrooms: Classroom[]): ScheduleEntry {
+function normalizeOverride(o: RawOverride, classrooms: Classroom[]): ScheduleEntry {
   const room = classrooms.find((c) => c.id === o.classroom_id);
   return {
     id:              o.id,
@@ -73,29 +103,11 @@ function normalizeOverride(o: any, classrooms: Classroom[]): ScheduleEntry {
     teacher_color:   o.courses?.instructors?.color,
     course_accent:   o.courses?.accent_color,
     enrolled_names:  o.courses?.enrolled_names ?? [],
+    consulting_student:       o.consulting_student || undefined,
+    consulting_teacher:       o.consulting_teacher || undefined,
+    consulting_teacher_color: o.consulting_teacher_color || undefined,
     is_override:     true,
   };
-}
-
-// ── 아이콘 ────────────────────────────────────────────────────
-function HomeIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-      <polyline points="9 22 9 12 15 12 15 22"/>
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8"/>
-      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-    </svg>
-  );
 }
 
 function NavLinks() {
@@ -108,7 +120,7 @@ function NavLinks() {
         <Link href="/portal"
           className="flex items-center gap-1.5 text-xs font-semibold transition-all hover:opacity-100 w-fit"
           style={linkStyle} onMouseEnter={hoverOn} onMouseLeave={hoverOff}>
-          <HomeIcon /> 홈
+          <HomeIcon size={14} /> 홈
         </Link>
         <span style={{ color: "var(--sc-border)", fontSize: 12 }}>·</span>
         <Link href="/manage/courses"
@@ -255,9 +267,20 @@ function saveFilter(patch: Record<string, unknown>) {
   } catch { /* ignore */ }
 }
 
+// ── 주간 날짜 계산 헬퍼 ──────────────────────────────────────
+function getWeekDates(weekOffset: number) {
+  const monday = getMonday(weekOffset);
+  const weekEnd = new Date(monday);
+  weekEnd.setDate(monday.getDate() + 6);
+  const mondayStr  = monday.toISOString().split("T")[0];
+  const weekEndStr = weekEnd.toISOString().split("T")[0];
+  return { monday, weekEnd, mondayStr, weekEndStr };
+}
+
 // ── 메인 ──────────────────────────────────────────────────────
 export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const router   = useRouter();
   const isWide   = useIsWideLayout();
 
   // hydration 에러 방지: 서버/클라이언트 초기값 동일하게 기본값 사용
@@ -277,7 +300,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
   const [detailCell,      setDetailCell]      = useState<DetailCellInfo | null>(null);
   const [showRoomManager, setShowRoomManager] = useState(false);
   const [courses,         setCourses]         = useState<Course[]>([]);
-  const [weeklyOverrides, setWeeklyOverrides] = useState<any[]>([]);
+  const [weeklyOverrides, setWeeklyOverrides] = useState<RawOverride[]>([]);
 
   const [preselectedCourse, setPreselectedCourse] = useState<Course | null>(null);
 
@@ -288,36 +311,36 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
     if (saved.selectedDay)     setSelectedDayRaw(saved.selectedDay as DayKey);
     if (saved.selectedRoom)    setSelectedRoomRaw(saved.selectedRoom);
     if (saved.selectedTeacher !== undefined) setSelectedTeacherRaw(saved.selectedTeacher);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 수업 목록 (subject + instructor + 학생 포함)
   useEffect(() => {
+    let cancelled = false;
     supabase
       .from("courses")
       .select("id, name, subject, enrolled_names, instructors ( name, color )")
       .order("subject")
       .then(({ data }) => {
-        if (!data) return;
-        setCourses(data.map((c: any) => ({
-          id:              c.id,
-          name:            c.name ?? "수업",
-          subject:         c.subject ?? undefined,
-          instructorName:  c.instructors?.name  ?? undefined,
-          instructorColor: c.instructors?.color ?? undefined,
-          enrolledNames:   c.enrolled_names     ?? [],
-        })));
+        if (cancelled || !data) return;
+        setCourses(data.map((c: Record<string, unknown>) => {
+          const inst = c.instructors as { name?: string; color?: string } | null;
+          return {
+            id:              c.id as string,
+            name:            (c.name as string) ?? "수업",
+            subject:         (c.subject as string) ?? undefined,
+            instructorName:  inst?.name  ?? undefined,
+            instructorColor: inst?.color ?? undefined,
+            enrolledNames:   (c.enrolled_names as string[]) ?? [],
+          };
+        }));
       });
-  }, []);
-
+    return () => { cancelled = true; };
+  }, [supabase]);
 
   // 주 오버라이드
   useEffect(() => {
-    const monday = getMonday(weekOffset);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    const startStr = monday.toISOString().split("T")[0];
-    const endStr   = sunday.toISOString().split("T")[0];
+    let cancelled = false;
+    const { mondayStr, weekEndStr } = getWeekDates(weekOffset);
 
     supabase
       .from("schedule_overrides")
@@ -325,48 +348,57 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         id, classroom_id, day, start_time, end_time,
         is_cancelled, override_type, apply_from, apply_until,
         weeks_count, base_schedule_id,
+        consulting_student, consulting_teacher, consulting_teacher_color,
         courses ( id, name, subject, accent_color, instructors ( id, name, color ) )
       `)
-      .lte("apply_from", endStr)
-      .or(`apply_until.is.null,apply_until.gte.${startStr}`)
-      .then(({ data }) => setWeeklyOverrides(data ?? []));
-  }, [weekOffset]);
+      .lte("apply_from", weekEndStr)
+      .or(`apply_until.is.null,apply_until.gte.${mondayStr}`)
+      .then(({ data }) => {
+        if (!cancelled) setWeeklyOverrides((data as unknown as RawOverride[]) ?? []);
+      });
+    return () => { cancelled = true; };
+  }, [weekOffset, supabase]);
 
-  // ── 이번 주 유효 일정 합성 ─────────────────────────────────
-  const monday      = getMonday(weekOffset);
-  const weekEnd     = new Date(monday);
-  weekEnd.setDate(monday.getDate() + 6);  // 일요일
-  const startStr    = monday.toISOString().split("T")[0];
-  const endStr      = weekEnd.toISOString().split("T")[0];
-  const saturdayStr = weekEnd.toISOString().split("T")[0];
-
-  const activeFixed = fixedSchedules
-    .filter((s) => {
-      const from  = s.effective_from ?? "0000-00-00";
-      const until = s.effective_until;
-      return from <= endStr && (until == null || until >= startStr);
-    })
-    .map(normalize);
-
-  const cancelledBaseIds = new Set(
-    weeklyOverrides
-      .filter((o) => o.is_cancelled && o.base_schedule_id)
-      .map((o) => o.base_schedule_id as string)
+  // ── 이번 주 유효 일정 합성 (useMemo로 캐싱) ───────────────
+  const { mondayStr: startStr, weekEndStr: endStr } = useMemo(
+    () => getWeekDates(weekOffset), [weekOffset]
   );
+  const saturdayStr = endStr;
 
-  const tempAdditions = weeklyOverrides
-    .filter((o) => !o.is_cancelled)
-    .map((o) => normalizeOverride(o, classrooms));
+  const effectiveSchedules = useMemo(() => {
+    const activeFixed = fixedSchedules
+      .filter((s) => {
+        const from  = s.effective_from ?? "0000-00-00";
+        const until = s.effective_until;
+        return from <= endStr && (until == null || until >= startStr);
+      })
+      .map(normalize);
 
-  const effectiveSchedules = [
-    ...activeFixed.filter((s) => !cancelledBaseIds.has(s.id)),
-    ...tempAdditions,
-  ];
+    const cancelledBaseIds = new Set(
+      weeklyOverrides
+        .filter((o) => o.is_cancelled && o.base_schedule_id)
+        .map((o) => o.base_schedule_id as string)
+    );
+
+    const tempAdditions = weeklyOverrides
+      .filter((o) => !o.is_cancelled)
+      .map((o) => normalizeOverride(o, classrooms));
+
+    return [
+      ...activeFixed.filter((s) => !cancelledBaseIds.has(s.id)),
+      ...tempAdditions,
+    ];
+  }, [fixedSchedules, weeklyOverrides, classrooms, startStr, endStr]);
+
+  // effectiveSchedules의 최신값을 ref로 유지 (useCallback dep 순환 방지)
+  const effectiveRef = useRef(effectiveSchedules);
+  effectiveRef.current = effectiveSchedules;
 
   // ── 셀 클릭 라우팅 ─────────────────────────────────────────
   function handleCellClick(info: CellClickInfo) {
     if (info.scheduleId) {
-      // 기존 블록 클릭 → 상세/삭제 모달
+      // effectiveSchedules에서 해당 일정의 상담 필드 가져오기
+      const sched = effectiveRef.current.find((s) => s.id === info.scheduleId);
       setDetailCell({
         classroomId:   info.classroomId,
         classroomName: info.classroomName,
@@ -378,10 +410,12 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         endTime:       info.endTime,
         scheduleId:    info.scheduleId,
         notes:         info.notes,
+        consultingStudent:      sched?.consulting_student,
+        consultingTeacher:      sched?.consulting_teacher,
+        consultingTeacherColor: sched?.consulting_teacher_color,
         isOverride:    info.isOverride,
       });
     } else {
-      // 빈 공간 클릭 → 추가 모달
       setPreselectedCourse(null);
       setModalCell(info);
     }
@@ -389,12 +423,8 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
 
   // ── 저장 핸들러 ─────────────────────────────────────────────
   const handleSave = useCallback(async (data: SaveData) => {
-    const monday    = getMonday(weekOffset);
-    const weekEnd   = new Date(monday);
-    weekEnd.setDate(monday.getDate() + 6);   // 일요일
-    const mondayStr  = monday.toISOString().split("T")[0];
-    const weekEndStr = weekEnd.toISOString().split("T")[0];
-    const today      = new Date().toISOString().split("T")[0];
+    const { monday, mondayStr, weekEndStr } = getWeekDates(weekOffset);
+    const today = new Date().toISOString().split("T")[0];
 
     function calcUntil() {
       if (data.tempScope === "once") return weekEndStr;
@@ -408,15 +438,10 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
       const days = data.selectedDays?.length ? data.selectedDays : [data.cell.day as DayKey];
       const st   = (data.startTime ?? data.cell.time) + ":00";
       const et   = (data.endTime   ?? data.cell.time) + ":00";
-
       const classroomId = data.classroomOverride ?? data.cell.classroomId;
 
       // ── 수정 모드: 기존 레코드 UPDATE ──────────────────────────
       if (data.cell.scheduleId) {
-        const notesVal = data.studentName
-          ? [data.studentName, data.consultingTeacher ?? "", data.consultingTeacherColor ?? ""].join("||")
-          : null;
-
         const table = data.cell.isOverride ? "schedule_overrides" : "classroom_schedules";
         const { error } = await supabase.from(table).update({
           classroom_id: classroomId,
@@ -424,7 +449,9 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
           start_time:   st,
           end_time:     et,
           course_id:    courseId,
-          notes:        notesVal,
+          consulting_student:       data.studentName || null,
+          consulting_teacher:       data.consultingTeacher || null,
+          consulting_teacher_color: data.consultingTeacherColor || null,
         }).eq("id", data.cell.scheduleId);
 
         if (error) {
@@ -433,7 +460,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
           return;
         }
         setModalCell(null);
-        window.location.reload();
+        router.refresh();
         return;
       }
 
@@ -447,11 +474,9 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
             effective_from: today,
             ...(courseId ? { course_id: courseId } : {}),
             ...(data.studentName ? {
-              notes: [
-                data.studentName,
-                data.consultingTeacher ?? "",
-                data.consultingTeacherColor ?? "",
-              ].join("||"),
+              consulting_student:       data.studentName,
+              consulting_teacher:       data.consultingTeacher || null,
+              consulting_teacher_color: data.consultingTeacherColor || null,
             } : {}),
           }))
         );
@@ -474,11 +499,9 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
             weeks_count:   data.tempScope === "once" ? 1 : (data.weeksCount ?? 1),
             ...(courseId ? { course_id: courseId } : {}),
             ...(data.studentName ? {
-              memo: [
-                data.studentName,
-                data.consultingTeacher ?? "",
-                data.consultingTeacherColor ?? "",
-              ].join("||"),
+              consulting_student:       data.studentName,
+              consulting_teacher:       data.consultingTeacher || null,
+              consulting_teacher_color: data.consultingTeacherColor || null,
             } : {}),
           }))
         );
@@ -491,16 +514,12 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
     }
 
     setModalCell(null);
-    window.location.reload();
-  }, [weekOffset, supabase]);
+    router.refresh();
+  }, [weekOffset, supabase, router]);
 
   // ── 삭제 핸들러 (ScheduleDetailModal) ───────────────────────
   const handleDelete = useCallback(async (data: DeleteData) => {
-    const monday    = getMonday(weekOffset);
-    const weekEnd   = new Date(monday);
-    weekEnd.setDate(monday.getDate() + 6);   // 일요일
-    const mondayStr  = monday.toISOString().split("T")[0];
-    const weekEndStr = weekEnd.toISOString().split("T")[0];
+    const { monday, mondayStr, weekEndStr } = getWeekDates(weekOffset);
 
     function calcUntil() {
       if (data.tempScope === "once") return weekEndStr;
@@ -510,16 +529,20 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
     }
 
     if (data.deleteType === "permanent") {
-      // 오늘을 포함해서 이후 모두 삭제 → effective_until = 어제
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = yesterday.toISOString().split("T")[0];
-      await supabase
+      const { error } = await supabase
         .from("classroom_schedules")
         .update({ effective_until: yesterdayStr })
         .eq("id", data.scheduleId);
+      if (error) {
+        console.error("일정 삭제 오류:", error);
+        alert(`일정 삭제 실패: ${error.message}`);
+        return;
+      }
     } else {
-      await supabase.from("schedule_overrides").insert({
+      const { error } = await supabase.from("schedule_overrides").insert({
         base_schedule_id: data.scheduleId,
         classroom_id:     data.classroomId,
         day:              data.day,
@@ -531,38 +554,56 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         apply_until:      calcUntil(),
         weeks_count:      data.tempScope === "once" ? 1 : (data.weeksCount ?? 1),
       });
+      if (error) {
+        console.error("임시 삭제 오류:", error);
+        alert(`임시 삭제 실패: ${error.message}`);
+        return;
+      }
     }
 
     setDetailCell(null);
-    window.location.reload();
-  }, [weekOffset, supabase]);
+    router.refresh();
+  }, [weekOffset, supabase, router]);
 
   // ── 수정 핸들러 (ScheduleDetailModal → EditModal 재오픈) ────
   const handleEdit = useCallback((detail: DetailCellInfo) => {
     setDetailCell(null);
 
-    // 기존 수업 찾아서 preselectedCourse 세팅
-    const sched = effectiveSchedules.find((s) => s.id === detail.scheduleId);
+    const sched = effectiveRef.current.find((s) => s.id === detail.scheduleId);
     if (sched?.course_id) {
       const matched = courses.find((c) => c.id === sched.course_id);
       if (matched) setPreselectedCourse(matched);
     }
 
-    // EditModal을 수정 모드로 열기 (scheduleId 포함 → handleSave에서 UPDATE)
     setModalCell({
-      classroomId:   detail.classroomId,
-      classroomName: detail.classroomName,
-      day:           detail.day,
-      time:          detail.startTime ?? "09:00",
-      startTime:     detail.startTime,
-      endTime:       detail.endTime,
-      scheduleId:    detail.scheduleId,   // ← UPDATE 트리거
-      isOverride:    detail.isOverride,   // ← 어느 테이블인지 구분
-      notes:         detail.notes,        // 상담 학생이름 pre-fill용
+      classroomId:           detail.classroomId,
+      classroomName:         detail.classroomName,
+      day:                   detail.day,
+      time:                  detail.startTime ?? "09:00",
+      startTime:             detail.startTime,
+      endTime:               detail.endTime,
+      scheduleId:            detail.scheduleId,
+      isOverride:            detail.isOverride,
+      notes:                 detail.notes,
+      consultingStudent:     detail.consultingStudent,
+      consultingTeacher:     detail.consultingTeacher,
+      consultingTeacherColor: detail.consultingTeacherColor,
     });
-  // effectiveSchedules를 dep에 넣으면 매번 재생성 → 참조로만 사용
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courses]);
+
+  // ── existingSchedules 메모이제이션 ─────────────────────────
+  const existingSchedulesSummary = useMemo(() =>
+    effectiveSchedules.map((s) => ({
+      id:              s.id,
+      classroom_id:    s.classroom_id,
+      day:             s.day,
+      start_time:      s.start_time,
+      end_time:        s.end_time,
+      course_name:     s.course_name,
+      course_subject:  s.course_subject,
+    })),
+    [effectiveSchedules]
+  );
 
   // ── 공통 모달 ──────────────────────────────────────────────
   const modals = (
@@ -576,15 +617,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         viewMode={view}
         activeTeacher={selectedTeacher}
         classrooms={classrooms}
-        existingSchedules={effectiveSchedules.map((s) => ({
-          id:              s.id,
-          classroom_id:    s.classroom_id,
-          day:             s.day,
-          start_time:      s.start_time,
-          end_time:        s.end_time,
-          course_name:     s.course_name,
-          course_subject:  s.course_subject,
-        }))}
+        existingSchedules={existingSchedulesSummary}
       />
       <ScheduleDetailModal
         cell={detailCell}
@@ -597,7 +630,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         <ClassroomManagerModal
           classrooms={classrooms}
           onClose={() => setShowRoomManager(false)}
-          onRefresh={() => window.location.reload()}
+          onRefresh={() => router.refresh()}
         />
       )}
     </>
@@ -655,7 +688,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold
                            transition-all duration-200 hover:opacity-80 active:scale-95"
                 style={{ background: "var(--sc-raised)", color: "var(--sc-dim)", border: "1px solid var(--sc-border)" }}>
-                <SearchIcon /> 교실 정보
+                <SearchIcon size={14} /> 교실 정보
               </button>
             </div>
           </div>
@@ -664,7 +697,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
           <WeekNav weekOffset={weekOffset} setWeekOffset={setWeekOffset} compact />
         </div>
 
-        {/* 우측 시간표 영역 — 최대 너비를 화면 높이의 80% 로 제한 */}
+        {/* 우측 시간표 영역 */}
         <div style={{ flex: 1, overflow: "hidden", padding: "12px 16px 0",
                       maxWidth: "min(960px, calc(100vh * 0.8))", minWidth: 0 }}>
           {grid}
@@ -692,7 +725,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold
                            transition-all duration-200 hover:opacity-80 active:scale-95"
                 style={{ background: "var(--sc-raised)", color: "var(--sc-dim)", border: "1px solid var(--sc-border)" }}>
-                <SearchIcon /> 교실 정보
+                <SearchIcon size={14} /> 교실 정보
               </button>
             </div>
           </div>
@@ -700,7 +733,7 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         <WeekNav weekOffset={weekOffset} setWeekOffset={setWeekOffset} />
       </div>
 
-      {/* 세로 레이아웃 — 최대 너비를 화면 높이 × 0.85 로 제한 */}
+      {/* 세로 레이아웃 */}
       <div className="px-8 py-5 mx-auto" style={{ maxWidth: "min(1200px, calc(100vh * 0.85))" }}>
         {grid}
       </div>

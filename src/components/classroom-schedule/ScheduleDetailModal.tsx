@@ -30,7 +30,11 @@ export interface DetailCellInfo {
   startTime?:    string;
   endTime?:      string;
   scheduleId:    string;
-  notes?:        string;   // 상담 일정: "학생이름||선생님이름||색상"
+  notes?:        string;
+  // 상담 전용 필드
+  consultingStudent?:      string;
+  consultingTeacher?:      string;
+  consultingTeacherColor?: string;
   isOverride?:   boolean;
 }
 
@@ -147,11 +151,10 @@ export default function ScheduleDetailModal({ cell, weekSaturdayStr, onClose, on
   if (!cell) return null;
 
   const dayLabel    = DAY_LABEL[cell.day] ?? cell.day;
-  const isConsulting = !cell.courseId && !!cell.notes;
-  const notesParts   = (cell.notes ?? "").split("||");
-  const studentNote  = notesParts[0] ?? "";
-  const teacherNote  = notesParts[1] ?? "";
-  const colorNote    = notesParts[2] ?? "";
+  const isConsulting = !cell.courseId && !!(cell.consultingStudent || cell.notes);
+  const studentNote  = cell.consultingStudent ?? "";
+  const teacherNote  = cell.consultingTeacher ?? "";
+  const colorNote    = cell.consultingTeacherColor ?? "";
 
   function submitDelete() {
     if (!cell) return;

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import InstructorManager, { Instructor } from "./InstructorManager";
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import { PencilIcon, TrashIcon, HomeIcon, PlusIcon, UserIcon } from "@/components/ui/Icons";
 
 // ── 타입 ──────────────────────────────────────────────────────
 interface CourseRow {
@@ -22,18 +23,6 @@ const ACCENT_PALETTE = [
   "#f97316","#eab308","#22c55e","#14b8a6",
   "#06b6d4","#3b82f6","#00e875","#a3e635",
 ];
-
-// ── 아이콘 ─────────────────────────────────────────────────────
-const ip = {
-  width:16, height:16, viewBox:"0 0 24 24", fill:"none",
-  stroke:"currentColor", strokeWidth:1.75,
-  strokeLinecap:"round" as const, strokeLinejoin:"round" as const,
-};
-const PencilIcon = () => <svg {...ip}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const TrashIcon  = () => <svg {...ip}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>;
-const HomeIcon   = () => <svg {...ip}><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
-const PlusIcon   = () => <svg {...ip}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-const UserIcon   = () => <svg {...ip}><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
 
 // ── 학생 이름 직접 입력 (추가 방식) ──────────────────────────
 function NameListInput({ names, onChange }: { names: string[]; onChange: (n: string[]) => void }) {
@@ -421,7 +410,7 @@ function saveCourseFilter(patch: Record<string, unknown>) {
 }
 
 export default function CourseManager() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [courses,     setCourses]     = useState<CourseRow[]>([]);
   const [instructors, setInstructors] = useState<Instructor[]>([]);

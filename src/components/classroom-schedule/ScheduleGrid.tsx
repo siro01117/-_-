@@ -43,23 +43,30 @@ export interface ScheduleEntry {
   teacher_color?:   string;   // 교사 색 (accent용)
   course_accent?:   string;   // 수업 강조 색
   enrolled_names?:  string[]; // 수강 학생 이름
-  notes?:           string;   // 상담 시 학생 이름 등 메모
+  notes?:           string;   // 일반 메모 (하위호환)
+  // 상담 전용 필드 (DB 컬럼 기반)
+  consulting_student?:       string;
+  consulting_teacher?:       string;
+  consulting_teacher_color?: string;
   is_override?:     boolean;
 }
 
 export interface CellClickInfo {
-  classroomId:   string;
-  classroomName: string;
-  day:           string;
-  time:          string;
-  scheduleId?:   string;
-  courseId?:     string;
-  courseName?:   string;
-  teacherName?:  string;
-  startTime?:    string;
-  endTime?:      string;
-  notes?:        string;
-  isOverride?:   boolean;
+  classroomId:            string;
+  classroomName:          string;
+  day:                    string;
+  time:                   string;
+  scheduleId?:            string;
+  courseId?:              string;
+  courseName?:            string;
+  teacherName?:           string;
+  startTime?:             string;
+  endTime?:               string;
+  notes?:                 string;
+  consultingStudent?:     string;
+  consultingTeacher?:     string;
+  consultingTeacherColor?: string;
+  isOverride?:            boolean;
 }
 
 interface Props {
@@ -173,7 +180,7 @@ function matteForLight(hex: string): string {
 }
 
 function colorFor(entry: ScheduleEntry, isDark: boolean, view?: string) {
-  const isConsulting = !entry.course_id && !!entry.notes;
+  const isConsulting = !entry.course_id && !!(entry.consulting_student || entry.notes);
 
   // 상담 블록: 항상 선생님 색 고정
   // 일반 블록: 선생님 뷰 → 수업 고유색, 그 외 → 선생님 색
@@ -259,10 +266,9 @@ function ScheduleBlock({
   const showTime     = height > 30;
   const showStudents = height > 68;
 
-  const isConsulting = !schedule.course_id && !!schedule.notes;
-  const notesParts      = (schedule.notes ?? "").split("||");
-  const studentNoteName = notesParts[0] ?? "";
-  const teacherNoteName = notesParts[1] ?? "";
+  const isConsulting = !schedule.course_id && !!(schedule.consulting_student || schedule.notes);
+  const studentNoteName = schedule.consulting_student ?? "";
+  const teacherNoteName = schedule.consulting_teacher ?? "";
   const names = schedule.enrolled_names ?? [];
 
   return (
