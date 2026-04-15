@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { DAYS, DayKey } from "./constants";
+import { AlertIcon } from "@/components/ui/Icons";
 
 // ── 타입 ──────────────────────────────────────────────────────
 type AddType    = "permanent" | "temporary";
@@ -9,12 +10,12 @@ type DeleteType = "permanent" | "temporary";
 type TempScope  = "once" | "weeks";
 
 export interface Course {
-  id:              string;
-  name:            string;       // auto-generated (fallback)
-  subject?:        string;
-  instructorName?: string;
+  id:               string;
+  name:             string;       // auto-generated (fallback)
+  subject?:         string;
+  instructorName?:  string;
   instructorColor?: string;
-  enrolledNames?:  string[];
+  enrolledNames?:   string[];
 }
 
 /** 블록 표시용 라벨 — subject 우선, 없으면 name */
@@ -93,9 +94,14 @@ const DAY_LABEL: Record<string, string> = {
 
 function addHour(t: string) {
   const [h, m] = t.split(":").map(Number);
-  const nh = Math.floor((h * 60 + m + 60) / 60) % 24;
-  const nm = (h * 60 + m + 60) % 60;
-  return `${String(nh).padStart(2,"0")}:${String(nm).padStart(2,"0")}`;
+  const total  = h * 60 + m + 60;
+  return `${String(Math.floor(total/60)%24).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`;
+}
+
+function addMinutes(t: string, minutes: number) {
+  const [h, m] = t.split(":").map(Number);
+  const total  = h * 60 + m + minutes;
+  return `${String(Math.floor(total/60)%24).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`;
 }
 
 /** HH:MM → 분 */
@@ -553,7 +559,7 @@ export default function EditModal({
             color:        "#f87171",
             whiteSpace:   "nowrap",
           }}>
-            <span style={{ fontSize: 14 }}>⚠</span>
+            <AlertIcon size={14}/>
             {validationMsg}
           </div>
           {/* 꼬리 */}
@@ -647,6 +653,9 @@ export default function EditModal({
                     setSelectedCourse(null);
                     setStudentName("");
                     setConflictError(null);
+                    // 상담 선택 시 종료시간 자동으로 30분 고정
+                    if (key === "consulting") setEndTime(addMinutes(startTime, 30));
+                    else setEndTime(addHour(startTime));
                   }}
                     className="py-2.5 rounded-xl text-sm font-bold transition-all duration-200"
                     style={{
@@ -673,7 +682,10 @@ export default function EditModal({
                 <CourseSearchInput
                   courses={filteredCourses}
                   value={selectedCourse}
-                  onSelect={(c) => { setSelectedCourse(c); if (c) setValidationField(null); }}
+                  onSelect={(c) => {
+                    setSelectedCourse(c);
+                    if (c) setValidationField(null);
+                  }}
                 />
               </div>
             )}
@@ -710,7 +722,7 @@ export default function EditModal({
             }}>
               <p className="text-[11px] font-bold uppercase tracking-widest mb-2"
                  style={{ color: validationField === "days" ? "#f87171" : "var(--sc-dim)" }}>
-                {isUpdateMode ? "요일" : "요일 (중복 가능)"}
+                요일 (중복 가능{isUpdateMode && <span style={{ fontWeight:400 }}> — 추가 선택 시 새 일정 생성</span>})
               </p>
               <div className="flex gap-1.5 flex-wrap">
                 {DAYS.map(({ key, label }) => {
@@ -718,12 +730,7 @@ export default function EditModal({
                   return (
                     <button key={key}
                       onClick={() => {
-                        // 수정 모드: 단일 선택 / 추가 모드: 토글(다중)
-                        if (isUpdateMode) {
-                          setSelectedDays([key]);
-                        } else {
-                          toggleDay(key);
-                        }
+                        toggleDay(key);
                         setConflictError(null);
                         setValidationField(null);
                       }}
@@ -747,15 +754,33 @@ export default function EditModal({
                 <div className="flex-1">
                   <p className="text-[10px] mb-1" style={{ color:"var(--sc-dim)" }}>시작</p>
                   <input type="time" step="300" value={startTime}
-                    onChange={(e) => { setStartTime(e.target.value); setEndTime(addHour(e.target.value)); setConflictError(null); }}
+                    onChange={(e) => {
+                      const t = e.target.value;
+                      setStartTime(t);
+                      setEndTime(scheduleKind === "consulting"
+                        ? addMinutes(t, 30)
+                        : addHour(t));
+                      setConflictError(null);
+                    }}
                     className="sc-input text-sm w-full" style={{ padding:"9px 10px" }} />
                 </div>
                 <span style={{ color:"var(--sc-dim)", marginTop:18 }}>→</span>
                 <div className="flex-1">
-                  <p className="text-[10px] mb-1" style={{ color:"var(--sc-dim)" }}>종료</p>
+                  <p className="text-[10px] mb-1 flex items-center gap-1.5" style={{ color:"var(--sc-dim)" }}>
+                    종료
+                    {scheduleKind === "consulting" && (
+                      <span style={{ fontSize:9, fontWeight:700, color:"var(--sc-green)",
+                        background:"var(--sc-raised)", border:"1px solid var(--sc-border)",
+                        borderRadius:4, padding:"1px 5px" }}>
+                        30분 고정
+                      </span>
+                    )}
+                  </p>
                   <input type="time" step="300" value={endTime}
-                    onChange={(e) => { setEndTime(e.target.value); setConflictError(null); }}
-                    className="sc-input text-sm w-full" style={{ padding:"9px 10px" }} />
+                    readOnly={scheduleKind === "consulting"}
+                    onChange={(e) => { if (scheduleKind !== "consulting") { setEndTime(e.target.value); setConflictError(null); } }}
+                    className="sc-input text-sm w-full"
+                    style={{ padding:"9px 10px", opacity: scheduleKind === "consulting" ? 0.6 : 1 }} />
                 </div>
               </div>
             </div>
@@ -798,7 +823,7 @@ export default function EditModal({
                 color: "#f87171",
                 fontWeight: 600,
               }}>
-                ⚠️ {conflictError}
+                {conflictError}
               </div>
             )}
         </div>

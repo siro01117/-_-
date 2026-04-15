@@ -252,9 +252,9 @@ function ScheduleBlock({
   const color    = colorFor(schedule, isDark, view);
 
   // 블록 height 기준 비례 폰트 크기
-  const fzTitle = Math.max(8,  Math.min(14, Math.round(height * 0.217))); // ~13px @ 60h
-  const fzTime  = Math.max(6,  Math.min(10, Math.round(height * 0.158))); // ~9.5px @ 60h
-  const fzBadge = Math.max(5,  Math.min(9,  Math.round(height * 0.133))); // ~8px @ 60h
+  const fzTitle = Math.max(8,  Math.min(11, Math.round(height * 0.15)));
+  const fzTime  = Math.max(7,  Math.min(9,  Math.round(height * 0.13)));
+  const fzBadge = Math.max(5,  Math.min(8,  Math.round(height * 0.11)));
 
   // 표시 임계값: 절대 높이 기준 (블록이 충분히 커야 표시)
   const showName = height > 16;
@@ -262,10 +262,12 @@ function ScheduleBlock({
 
   const isConsulting = !schedule.course_id && !!(schedule.consulting_student || schedule.notes);
 
-  // 교실 시간표(교실 점유 확인용): 선생님 이름 + 시간만 표시
-  const displayName = isConsulting
-    ? (schedule.consulting_teacher ? `${schedule.consulting_teacher}T` : "상담")
-    : (schedule.teacher_name ? `${schedule.teacher_name}T` : (schedule.course_name ?? "수업"));
+  // 선생님 뷰: 제목을 교실 위치로 표시 / 그 외 뷰: 선생님 이름 표시
+  const displayName = view === "teacher"
+    ? (schedule.classroom_name ?? (isConsulting ? "상담" : (schedule.course_subject ?? schedule.course_name ?? "수업")))
+    : isConsulting
+      ? (schedule.consulting_teacher ? `${schedule.consulting_teacher}T` : "상담")
+      : (schedule.teacher_name ? `${schedule.teacher_name}T` : (schedule.course_name ?? "수업"));
 
   return (
     <div
@@ -318,7 +320,7 @@ function ScheduleBlock({
       {showName && (
         <p style={{
           fontSize:     fzTitle,
-          fontWeight:   800,
+          fontWeight:   700,
           color:        color.text,
           marginTop:    0,
           lineHeight:   1.3,
@@ -334,18 +336,19 @@ function ScheduleBlock({
       {/* 시간 — 하단 */}
       {showTime && (
         <div style={{
-          position:     "absolute",
-          bottom:       3,
-          left:         6,
-          right:        5,
-          fontSize:     fzTime,
-          fontWeight:   600,
-          color:        color.textMuted,
-          whiteSpace:   "nowrap",
-          overflow:     "hidden",
-          textOverflow: "ellipsis",
+          position: "absolute", bottom: 3, left: 6, right: 5,
+          display: "flex", alignItems: "baseline", gap: 2,
+          whiteSpace: "nowrap", overflow: "hidden",
         }}>
-          {toHHMM(schedule.start_time)} ~ {toHHMM(schedule.end_time)}
+          <span style={{ fontSize: fzTime + 1, fontWeight: 700, color: color.textMuted, fontVariantNumeric: "tabular-nums" }}>
+            {toHHMM(schedule.start_time)}
+          </span>
+          <span style={{ fontSize: fzTime - 1, fontWeight: 300, color: color.textMuted, opacity: 0.55, margin: "0 1px" }}>
+            ~
+          </span>
+          <span style={{ fontSize: fzTime + 1, fontWeight: 700, color: color.textMuted, fontVariantNumeric: "tabular-nums" }}>
+            {toHHMM(schedule.end_time)}
+          </span>
         </div>
       )}
     </div>

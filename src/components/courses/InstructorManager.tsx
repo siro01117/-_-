@@ -1,15 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 // ── 타입 ──────────────────────────────────────────────────────
 export interface Instructor {
-  id:       string;
-  name:     string;
-  subjects: string[];
-  color:    string;
-  memo?:    string;
+  id:         string;
+  name:       string;
+  subjects:   string[];
+  color:      string;
+  memo?:      string;
+  profile_id?: string;
+}
+
+interface UserProfile {
+  id:   string;
+  name: string;
+  email: string;
 }
 
 // ── 색상 팔레트 ───────────────────────────────────────────────
@@ -83,18 +90,71 @@ function InstructorFormModal({ initial, onClose, onSave }: {
   onClose: () => void;
   onSave:  (data: Omit<Instructor, "id">) => Promise<void>;
 }) {
+  const supabase = createClient();
   const isEdit = !!initial;
-  const [name,     setName]     = useState(initial?.name     ?? "");
-  const [subjects, setSubjects] = useState<string[]>(initial?.subjects ?? []);
-  const [color,    setColor]    = useState(initial?.color    ?? COLOR_PALETTE[0]);
-  const [memo,     setMemo]     = useState(initial?.memo     ?? "");
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState("");
+
+  // 유저 선택 상태
+  const [users,       setUsers]       = useState<UserProfile[]>([]);
+  const [usersLoaded, setUsersLoaded] = useState(false);
+  const [userQuery,   setUserQuery]   = useState("");
+  const [userOpen,    setUserOpen]    = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const userPickerRef = useRef<HTMLDivElement>(null);
+
+  const [name,       setName]       = useState(initial?.name     ?? "");
+  const [subjects,   setSubjects]   = useState<string[]>(initial?.subjects ?? []);
+  const [color,      setColor]      = useState(initial?.color    ?? COLOR_PALETTE[0]);
+  const [memo,       setMemo]       = useState(initial?.memo     ?? "");
+  const [saving,     setSaving]     = useState(false);
+  const [error,      setError]      = useState("");
+
+  // 프로필 목록 로드 (드롭다운 열릴 때)
+  useEffect(() => {
+    if (!userOpen || usersLoaded) return;
+    supabase
+      .from("profiles")
+      .select("id, name, email")
+      .eq("approval_status", "approved")
+      .order("name")
+      .then(({ data }) => {
+        setUsers((data ?? []) as UserProfile[]);
+        setUsersLoaded(true);
+      });
+  }, [userOpen, usersLoaded, supabase]);
+
+  // 드롭다운 외부 클릭 닫기
+  useEffect(() => {
+    function fn(e: MouseEvent) {
+      if (userPickerRef.current && !userPickerRef.current.contains(e.target as Node)) {
+        setUserOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  const filteredUsers = users.filter(u =>
+    u.name.toLowerCase().includes(userQuery.toLowerCase()) ||
+    u.email.toLowerCase().includes(userQuery.toLowerCase())
+  );
+
+  function selectUser(u: UserProfile) {
+    setSelectedUser(u);
+    if (!name.trim()) setName(u.name); // 이름 자동입력
+    setUserOpen(false);
+    setUserQuery("");
+  }
 
   async function handleSave() {
     if (!name.trim()) { setError("선생님 이름을 입력하세요."); return; }
     setSaving(true);
-    await onSave({ name: name.trim(), subjects, color, memo: memo.trim() || undefined });
+    await onSave({
+      name: name.trim(),
+      subjects,
+      color,
+      memo: memo.trim() || undefined,
+      profile_id: selectedUser?.id ?? initial?.profile_id ?? undefined,
+    });
     setSaving(false);
   }
 
@@ -118,16 +178,83 @@ function InstructorFormModal({ initial, onClose, onSave }: {
               {isEdit ? "정보 수정" : "새 선생님 추가"}
             </h3>
           </div>
-          <button onClick={onClose} className="text-xl hover:opacity-60" style={{ color: "var(--sc-dim)" }}>×</button>
+          <button type="button" onClick={onClose} className="text-xl hover:opacity-60" style={{ color: "var(--sc-dim)" }}>×</button>
         </div>
 
         <div className="space-y-4 mb-5">
+
+          {/* 유저 연결 (선택) */}
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "var(--sc-dim)" }}>
+              유저 연결 <span style={{ fontWeight: 400, textTransform: "none" }}>(선택 — 개인 시간표 연동용)</span>
+            </p>
+            <div ref={userPickerRef} style={{ position: "relative" }}>
+              <button
+                type="button"
+                onClick={() => setUserOpen(o => !o)}
+                className="w-full text-left sc-input text-sm flex items-center justify-between"
+                style={{ padding: "10px 12px" }}
+              >
+                {selectedUser ? (
+                  <span style={{ color: "var(--sc-white)" }}>
+                    {selectedUser.name}
+                    <span style={{ color: "var(--sc-dim)", marginLeft: 8, fontSize: 11 }}>{selectedUser.email}</span>
+                  </span>
+                ) : initial?.profile_id ? (
+                  <span style={{ color: "var(--sc-dim)" }}>현재 유저 연결됨</span>
+                ) : (
+                  <span style={{ color: "var(--sc-dim)" }}>유저 선택...</span>
+                )}
+                <span style={{ color: "var(--sc-dim)" }}>▾</span>
+              </button>
+
+              {userOpen && (
+                <div className="absolute z-[90] w-full mt-1 rounded-xl shadow-xl overflow-hidden"
+                     style={{ background: "var(--sc-surface)", border: "1px solid var(--sc-border)", maxHeight: 220, overflowY: "auto" }}>
+                  <div style={{ padding: "8px 8px 4px" }}>
+                    <input
+                      value={userQuery}
+                      onChange={e => setUserQuery(e.target.value)}
+                      placeholder="이름 또는 이메일 검색..."
+                      className="sc-input text-sm w-full"
+                      style={{ padding: "6px 10px" }}
+                      autoFocus
+                    />
+                  </div>
+                  {!usersLoaded ? (
+                    <p style={{ padding: "8px 12px", fontSize: 12, color: "var(--sc-dim)" }}>불러오는 중...</p>
+                  ) : filteredUsers.length === 0 ? (
+                    <p style={{ padding: "8px 12px", fontSize: 12, color: "var(--sc-dim)" }}>검색 결과 없음</p>
+                  ) : (
+                    <>
+                      <button type="button"
+                        onClick={() => { setSelectedUser(null); setUserOpen(false); }}
+                        className="w-full text-left px-3 py-2 text-xs hover:opacity-70 transition-opacity"
+                        style={{ color: "var(--sc-dim)", borderBottom: "1px solid var(--sc-border)" }}>
+                        연결 안 함
+                      </button>
+                      {filteredUsers.map(u => (
+                        <button key={u.id} type="button"
+                          onClick={() => selectUser(u)}
+                          className="w-full text-left px-3 py-2 hover:opacity-70 transition-opacity"
+                          style={{ borderBottom: "1px solid var(--sc-border)", display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--sc-white)" }}>{u.name}</span>
+                          <span style={{ fontSize: 11, color: "var(--sc-dim)" }}>{u.email}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* 이름 */}
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "var(--sc-dim)" }}>이름 *</p>
             <input value={name} onChange={(e) => setName(e.target.value)}
               placeholder="선생님 이름..." className="sc-input text-sm w-full"
-              style={{ padding: "10px 12px" }} autoFocus />
+              style={{ padding: "10px 12px" }} autoFocus={!selectedUser} />
           </div>
 
           {/* 담당 색상 */}
@@ -137,7 +264,7 @@ function InstructorFormModal({ initial, onClose, onSave }: {
             </p>
             <div className="flex flex-wrap gap-2 mb-2">
               {COLOR_PALETTE.map((c) => (
-                <button key={c} onClick={() => setColor(c)} style={{
+                <button key={c} type="button" onClick={() => setColor(c)} style={{
                   width: 26, height: 26, borderRadius: "50%", background: c,
                   border: color === c ? "2.5px solid var(--sc-white)" : "2.5px solid transparent",
                   outline: color === c ? `2px solid ${c}` : "none", outlineOffset: 2,
@@ -180,9 +307,9 @@ function InstructorFormModal({ initial, onClose, onSave }: {
         {error && <p className="text-sm mb-3 text-center" style={{ color: "#f87171" }}>{error}</p>}
 
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={onClose} className="py-2.5 rounded-xl text-sm font-bold"
+          <button type="button" onClick={onClose} className="py-2.5 rounded-xl text-sm font-bold"
             style={{ background: "var(--sc-raised)", color: "var(--sc-dim)", border: "1px solid var(--sc-border)" }}>취소</button>
-          <button onClick={handleSave} disabled={saving}
+          <button type="button" onClick={handleSave} disabled={saving}
             className="py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95"
             style={{ background: "var(--sc-green)", color: "var(--sc-bg)", opacity: saving ? 0.6 : 1 }}>
             {saving ? "저장 중..." : (isEdit ? "수정 완료" : "추가")}
@@ -225,6 +352,15 @@ function InstructorCard({ inst, onEdit, onDelete }: {
           {inst.memo}
         </p>
       )}
+
+      {/* 유저 연결 상태 */}
+      <div style={{ fontSize: 10, fontWeight: 700 }}>
+        {inst.profile_id ? (
+          <span style={{ color: "var(--sc-green)" }}>● 유저 연결됨</span>
+        ) : (
+          <span style={{ color: "var(--sc-border)" }}>○ 유저 미연결</span>
+        )}
+      </div>
 
       {/* 액션 버튼 */}
       <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
@@ -291,7 +427,7 @@ export default function InstructorManager({ onClose, onUpdated }: Props) {
   const load = useCallback(async () => {
     const { data } = await supabase
       .from("instructors")
-      .select("id, name, subjects, color, memo")
+      .select("id, name, subjects, color, memo, profile_id")
       .order("name");
     setInstructors((data ?? []) as Instructor[]);
     setLoading(false);

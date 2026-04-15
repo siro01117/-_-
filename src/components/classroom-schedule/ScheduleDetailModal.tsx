@@ -330,7 +330,7 @@ export default function ScheduleDetailModal({ cell, weekSaturdayStr, onClose, on
                       color:      "var(--sc-white)",
                       border:     `1px solid ${accent}55`,
                     }}>
-                    ✏️ 수정
+                    수정
                   </button>
                   <button onClick={() => setShowDelete(true)}
                     className="py-2.5 rounded-xl text-sm font-bold transition-all"

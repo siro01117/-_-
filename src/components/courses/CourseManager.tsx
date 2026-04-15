@@ -313,8 +313,8 @@ function DeleteConfirm({ course, onCancel, onConfirm }: {
 }
 
 // ── 수업 카드 ─────────────────────────────────────────────────
-function CourseCard({ course, onEdit, onDelete }: {
-  course: CourseRow; onEdit: () => void; onDelete: () => void;
+function CourseCard({ course, onEdit, onDelete, onEnroll }: {
+  course: CourseRow; onEdit: () => void; onDelete: () => void; onEnroll: () => void;
 }) {
   return (
     <div className="rounded-2xl p-4 flex flex-col gap-2.5 relative group"
@@ -377,6 +377,11 @@ function CourseCard({ course, onEdit, onDelete }: {
 
         {/* 액션 버튼 — hover 시 노출 */}
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={onEnroll} title="학생 유저 연동"
+            className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:scale-110"
+            style={{ background: "var(--sc-raised)", color: "var(--sc-green)", border: "1px solid var(--sc-border)" }}>
+            <UserIcon />
+          </button>
           <button onClick={onEdit}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:scale-110"
             style={{ background: "var(--sc-raised)", color: "var(--sc-dim)", border: "1px solid var(--sc-border)" }}>
@@ -390,6 +395,184 @@ function CourseCard({ course, onEdit, onDelete }: {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── 학생 유저 연동 모달 ───────────────────────────────────────
+function StudentEnrollModal({ courseId, courseName, accentColor, onClose }: {
+  courseId:    string;
+  courseName:  string;
+  accentColor: string;
+  onClose:     () => void;
+}) {
+  const supabase = createClient();
+  const [enrolled,   setEnrolled]   = useState<{ enrollId: string; profileId: string; name: string }[]>([]);
+  const [profiles,   setProfiles]   = useState<{ id: string; name: string; email: string }[]>([]);
+  const [query,      setQuery]      = useState("");
+  const [loading,    setLoading]    = useState(true);
+  const [adding,     setAdding]     = useState(false);
+
+  // 현재 수강생 로드
+  const loadEnrolled = useCallback(async () => {
+    const { data } = await supabase
+      .from("enrollments")
+      .select("id, students ( id, profile_id, profiles ( id, name ) )")
+      .eq("course_id", courseId)
+      .eq("is_active", true);
+    setEnrolled(
+      (data ?? []).map((e: any) => ({
+        enrollId:  e.id,
+        profileId: e.students?.profile_id ?? "",
+        name:      e.students?.profiles?.name ?? "알 수 없음",
+      })).filter(e => e.profileId)
+    );
+    setLoading(false);
+  }, [courseId, supabase]);
+
+  useEffect(() => {
+    loadEnrolled();
+    supabase.from("profiles").select("id, name, email")
+      .eq("approval_status", "approved").order("name")
+      .then(({ data }) => setProfiles((data ?? []) as any));
+  }, [loadEnrolled, supabase]);
+
+  const enrolledIds = new Set(enrolled.map(e => e.profileId));
+  const filtered = profiles.filter(p =>
+    !enrolledIds.has(p.id) &&
+    (p.name.toLowerCase().includes(query.toLowerCase()) ||
+     p.email.toLowerCase().includes(query.toLowerCase()))
+  );
+
+  async function handleEnroll(profileId: string) {
+    setAdding(true);
+    // 1. students 레코드 찾거나 생성
+    let { data: studentRow } = await supabase
+      .from("students").select("id").eq("profile_id", profileId).maybeSingle();
+    if (!studentRow) {
+      const { data: created } = await supabase
+        .from("students").insert({ profile_id: profileId }).select("id").single();
+      studentRow = created;
+    }
+    if (!studentRow) { setAdding(false); return; }
+
+    // 2. enrollment 생성 (이미 있으면 재활성화)
+    const { data: existing } = await supabase
+      .from("enrollments").select("id").eq("student_id", studentRow.id).eq("course_id", courseId).maybeSingle();
+    if (existing) {
+      await supabase.from("enrollments").update({ is_active: true }).eq("id", existing.id);
+    } else {
+      await supabase.from("enrollments").insert({ student_id: studentRow.id, course_id: courseId, is_active: true });
+    }
+
+    // 3. 같은 이름이 enrolled_names에 있으면 중복 제거
+    const enrollingName = profiles.find(p => p.id === profileId)?.name ?? "";
+    if (enrollingName) {
+      const { data: courseRow } = await supabase
+        .from("courses").select("enrolled_names").eq("id", courseId).single();
+      const currentNames: string[] = courseRow?.enrolled_names ?? [];
+      if (currentNames.includes(enrollingName)) {
+        await supabase.from("courses")
+          .update({ enrolled_names: currentNames.filter(n => n !== enrollingName) })
+          .eq("id", courseId);
+      }
+    }
+
+    await loadEnrolled();
+    setQuery("");
+    setAdding(false);
+  }
+
+  async function handleUnenroll(enrollId: string) {
+    await supabase.from("enrollments").update({ is_active: false }).eq("id", enrollId);
+    await loadEnrolled();
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[70]"
+           style={{ background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)" }}
+           onClick={onClose} />
+      <div className="fixed z-[80] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+                      w-full max-w-md rounded-2xl shadow-2xl"
+           style={{ background:"var(--sc-surface)", border:"1px solid var(--sc-border)",
+                    maxHeight:"85vh", display:"flex", flexDirection:"column" }}
+           onClick={e => e.stopPropagation()}>
+
+        {/* 헤더 */}
+        <div className="px-5 pt-5 pb-4" style={{ borderBottom:"1px solid var(--sc-border)", flexShrink:0 }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color:"var(--sc-dim)" }}>학생 유저 연동</p>
+              <h3 className="font-black text-base" style={{ color:"var(--sc-white)" }}>
+                <span style={{ color: accentColor }}>{courseName}</span>
+              </h3>
+            </div>
+            <button type="button" onClick={onClose} className="text-xl hover:opacity-60" style={{ color:"var(--sc-dim)" }}>×</button>
+          </div>
+        </div>
+
+        <div style={{ overflowY:"auto", flex:1, padding:"16px 20px 20px", display:"flex", flexDirection:"column", gap:16 }}>
+          {/* 현재 수강생 */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color:"var(--sc-dim)" }}>
+              연동된 학생 {enrolled.length > 0 && `(${enrolled.length}명)`}
+            </p>
+            {loading ? (
+              <p style={{ fontSize:12, color:"var(--sc-dim)" }}>불러오는 중...</p>
+            ) : enrolled.length === 0 ? (
+              <p style={{ fontSize:12, color:"var(--sc-dim)" }}>아직 연동된 학생이 없습니다.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {enrolled.map(e => (
+                  <div key={e.enrollId} className="flex items-center justify-between px-3 py-2 rounded-xl"
+                       style={{ background:"var(--sc-raised)", border:"1px solid var(--sc-border)" }}>
+                    <div className="flex items-center gap-2">
+                      <div style={{ width:7, height:7, borderRadius:"50%", background:accentColor }} />
+                      <span style={{ fontSize:13, fontWeight:700, color:"var(--sc-white)" }}>{e.name}</span>
+                      <span style={{ fontSize:10, color:"var(--sc-green)", fontWeight:600 }}>● 연동</span>
+                    </div>
+                    <button type="button" onClick={() => handleUnenroll(e.enrollId)}
+                      className="text-xs font-bold px-2 py-1 rounded-lg hover:opacity-80 transition-opacity"
+                      style={{ color:"#f87171", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.2)" }}>
+                      해제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 유저 검색 + 추가 */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color:"var(--sc-dim)" }}>유저 추가</p>
+            <input
+              value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="이름 또는 이메일 검색..."
+              className="sc-input text-sm w-full mb-2" style={{ padding:"8px 12px" }} />
+            {query && (
+              <div className="flex flex-col gap-1.5" style={{ maxHeight:200, overflowY:"auto" }}>
+                {filtered.length === 0 ? (
+                  <p style={{ fontSize:12, color:"var(--sc-dim)" }}>검색 결과 없음 (이미 등록됐거나 없는 유저)</p>
+                ) : filtered.map(p => (
+                  <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-xl"
+                       style={{ background:"var(--sc-raised)", border:"1px solid var(--sc-border)" }}>
+                    <div>
+                      <p style={{ fontSize:13, fontWeight:700, color:"var(--sc-white)", margin:0 }}>{p.name}</p>
+                      <p style={{ fontSize:10, color:"var(--sc-dim)", margin:0 }}>{p.email}</p>
+                    </div>
+                    <button type="button" onClick={() => handleEnroll(p.id)} disabled={adding}
+                      className="text-xs font-bold px-2 py-1 rounded-lg transition-all active:scale-95"
+                      style={{ background:"var(--sc-green)", color:"var(--sc-bg)", border:"none", opacity: adding ? 0.6 : 1 }}>
+                      {adding ? "추가 중…" : "등록"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -419,6 +602,7 @@ export default function CourseManager() {
   const [createOpen,        setCreateOpen]        = useState(false);
   const [editTarget,        setEditTarget]        = useState<CourseRow | null>(null);
   const [deleteTarget,      setDeleteTarget]      = useState<CourseRow | null>(null);
+  const [enrollTarget,      setEnrollTarget]      = useState<CourseRow | null>(null);
   const [showInstructorMgr, setShowInstructorMgr] = useState(false);
   const [search,            setSearch]            = useState("");
   const [filterMode,        setFilterModeRaw]     = useState<FilterMode>("all");
@@ -444,17 +628,32 @@ export default function CourseManager() {
   const loadCourses = useCallback(async () => {
     const { data } = await supabase
       .from("courses")
-      .select("id, subject, accent_color, enrolled_names, memo, instructors ( id, name, subjects, color, memo )")
+      .select(`
+        id, subject, accent_color, enrolled_names, memo,
+        instructors ( id, name, subjects, color, memo ),
+        enrollments ( is_active, students ( profiles ( name ) ) )
+      `)
       .order("subject");
     if (!data) return;
-    setCourses(data.map((c: any) => ({
-      id:            c.id,
-      subject:       c.subject,
-      accent_color:  c.accent_color ?? "#6366f1",
-      instructor:    c.instructors ?? undefined,
-      enrolledNames: c.enrolled_names ?? [],
-      memo:          c.memo,
-    })));
+    setCourses(data.map((c: any) => {
+      // 연동된 유저 학생 이름 추출
+      const linkedNames: string[] = (c.enrollments ?? [])
+        .filter((e: any) => e.is_active)
+        .map((e: any) => e.students?.profiles?.name)
+        .filter(Boolean);
+
+      // 중복 제거: enrolled_names + linked 합산 (Set)
+      const allNames = Array.from(new Set([...(c.enrolled_names ?? []), ...linkedNames]));
+
+      return {
+        id:            c.id,
+        subject:       c.subject,
+        accent_color:  c.accent_color ?? "#6366f1",
+        instructor:    c.instructors ?? undefined,
+        enrolledNames: allNames,
+        memo:          c.memo,
+      };
+    }));
   }, [supabase]);
 
   useEffect(() => {
@@ -471,12 +670,12 @@ export default function CourseManager() {
   // ── 생성 ─────────────────────────────────────────────────────
   async function handleCreate(formData: any) {
     const { error } = await supabase.from("courses").insert({
-      name:           buildAutoName(formData.subject, formData.instructorId),
-      subject:        formData.subject ?? null,
-      instructor_id:  formData.instructorId ?? null,
-      accent_color:   formData.accentColor,
-      enrolled_names: formData.enrolledNames,
-      memo:           formData.memo ?? null,
+      name:              buildAutoName(formData.subject, formData.instructorId),
+      subject:           formData.subject ?? null,
+      instructor_id:     formData.instructorId ?? null,
+      accent_color:      formData.accentColor,
+      enrolled_names:    formData.enrolledNames,
+      memo:              formData.memo ?? null,
     });
     if (error) {
       alert(
@@ -494,12 +693,12 @@ export default function CourseManager() {
   async function handleEdit(formData: any) {
     if (!editTarget) return;
     const { error } = await supabase.from("courses").update({
-      name:           buildAutoName(formData.subject, formData.instructorId),
-      subject:        formData.subject ?? null,
-      instructor_id:  formData.instructorId ?? null,
-      accent_color:   formData.accentColor,
-      enrolled_names: formData.enrolledNames,
-      memo:           formData.memo ?? null,
+      name:              buildAutoName(formData.subject, formData.instructorId),
+      subject:           formData.subject ?? null,
+      instructor_id:     formData.instructorId ?? null,
+      accent_color:      formData.accentColor,
+      enrolled_names:    formData.enrolledNames,
+      memo:              formData.memo ?? null,
     }).eq("id", editTarget.id);
     if (error) {
       alert(`수업 수정 실패: ${error.message}`);
@@ -700,6 +899,7 @@ export default function CourseManager() {
                   course={c}
                   onEdit={() => setEditTarget(c)}
                   onDelete={() => setDeleteTarget(c)}
+                  onEnroll={() => setEnrollTarget(c)}
                 />
               ))}
             </div>
@@ -720,6 +920,16 @@ export default function CourseManager() {
       {/* 삭제 확인 */}
       {deleteTarget && (
         <DeleteConfirm course={deleteTarget} onCancel={() => setDeleteTarget(null)} onConfirm={handleDelete} />
+      )}
+
+      {/* 학생 유저 연동 */}
+      {enrollTarget && (
+        <StudentEnrollModal
+          courseId={enrollTarget.id}
+          courseName={enrollTarget.subject ?? enrollTarget.instructor?.name ?? "수업"}
+          accentColor={enrollTarget.accent_color}
+          onClose={() => setEnrollTarget(null)}
+        />
       )}
 
       {/* 선생님 관리 */}

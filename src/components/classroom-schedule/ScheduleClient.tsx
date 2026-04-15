@@ -64,6 +64,7 @@ interface Props {
   fixedSchedules: RawSchedule[];
 }
 
+
 function normalize(s: RawSchedule): ScheduleEntry {
   return {
     id:              s.id,
@@ -353,12 +354,12 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         setCourses(data.map((c: Record<string, unknown>) => {
           const inst = c.instructors as { name?: string; color?: string } | null;
           return {
-            id:              c.id as string,
-            name:            (c.name as string) ?? "수업",
-            subject:         (c.subject as string) ?? undefined,
-            instructorName:  inst?.name  ?? undefined,
-            instructorColor: inst?.color ?? undefined,
-            enrolledNames:   (c.enrolled_names as string[]) ?? [],
+            id:               c.id as string,
+            name:             (c.name as string) ?? "수업",
+            subject:          (c.subject as string) ?? undefined,
+            instructorName:   inst?.name  ?? undefined,
+            instructorColor:  inst?.color ?? undefined,
+            enrolledNames:    (c.enrolled_names as string[]) ?? [],
           };
         }));
       });
@@ -468,9 +469,11 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
       const et   = (data.endTime   ?? data.cell.time) + ":00";
       const classroomId = data.classroomOverride ?? data.cell.classroomId;
 
-      // ── 수정 모드: 기존 레코드 UPDATE ──────────────────────────
+      // ── 수정 모드: 기존 레코드 UPDATE + 추가 요일은 INSERT ──────
       if (data.cell.scheduleId) {
         const table = data.cell.isOverride ? "schedule_overrides" : "classroom_schedules";
+
+        // 첫 번째 요일 → 기존 레코드 UPDATE
         const { error } = await supabase.from(table).update({
           classroom_id: classroomId,
           day:          days[0],
@@ -487,6 +490,30 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
           alert(`일정 수정 실패: ${error.message}`);
           return;
         }
+
+        // 추가 요일 → 새 레코드 INSERT
+        if (days.length > 1) {
+          const extraDays = days.slice(1);
+          const { error: insertError } = await supabase
+            .from("classroom_schedules")
+            .insert(extraDays.map((day) => ({
+              classroom_id:   classroomId,
+              day,
+              start_time:     st,
+              end_time:       et,
+              effective_from: today,
+              ...(courseId ? { course_id: courseId } : {}),
+              ...(data.studentName ? {
+                consulting_student:       data.studentName,
+                consulting_teacher:       data.consultingTeacher || null,
+                consulting_teacher_color: data.consultingTeacherColor || null,
+              } : {}),
+            })));
+          if (insertError) {
+            alert(`추가 요일 생성 실패: ${insertError.message}`);
+          }
+        }
+
         setModalCell(null);
         router.refresh();
         return;
@@ -568,6 +595,8 @@ export default function ScheduleClient({ classrooms, fixedSchedules }: Props) {
         alert(`삭제 실패: ${error.message}`);
         return;
       }
+      // 로컬 상태 즉시 업데이트 (router.refresh()만으로는 클라이언트 상태 미갱신)
+      setWeeklyOverrides(prev => prev.filter(o => o.id !== data.scheduleId));
       setDetailCell(null);
       router.refresh();
       return;

@@ -14,28 +14,32 @@ export default async function StudentSchedulePage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 권한 확인 (admin/manager만)
+  // 내 역할 + 지위
   const { data: myProfile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+    .from("profiles").select("role").eq("id", user.id).single();
+  if (!myProfile) redirect("/schedule/me");
 
-  if (!myProfile || myProfile.role === "user") redirect("/schedule/me");
+  const { data: myRoleData } = await supabase
+    .from("roles").select("rank").eq("name", myProfile.role).single();
+  const myRank: number = (myRoleData as any)?.rank ?? 0;
 
   const today = new Date().toISOString().split("T")[0];
 
-  // 학생 정보 + 수강 내역
+  // 학생 정보
   const { data: student } = await supabase
     .from("students")
-    .select(`
-      id,
-      profiles ( id, name, role )
-    `)
+    .select(`id, profiles ( id, name, role )`)
     .eq("id", studentId)
     .single();
 
   if (!student) redirect("/schedule/students");
+
+  // 대상 역할 지위 확인 — 내 지위보다 낮아야 열람 가능
+  const targetRole = (student as any).profiles?.role ?? "";
+  const { data: targetRoleData } = await supabase
+    .from("roles").select("rank").eq("name", targetRole).single();
+  const targetRank: number = (targetRoleData as any)?.rank ?? 99;
+  if (targetRank <= myRank) redirect("/schedule/students");
 
   const { data: enrollments } = await supabase
     .from("enrollments")

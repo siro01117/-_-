@@ -189,22 +189,27 @@
   }
   .theme-toggle.active .theme-toggle-knob { transform: translateX(20px); }
 
-  /* ── 시간표 스크롤바 (다크모드 친화적) ─── */
-  .sc-timetable-scroll::-webkit-scrollbar {
+  /* ── 전역 스크롤바 ───────────────────────── */
+  ::-webkit-scrollbar {
     width: 5px;
+    height: 5px;
   }
-  .sc-timetable-scroll::-webkit-scrollbar-track {
+  ::-webkit-scrollbar-track {
     background: transparent;
   }
-  .sc-timetable-scroll::-webkit-scrollbar-thumb {
+  ::-webkit-scrollbar-thumb {
     background: var(--sc-border);
     border-radius: 10px;
+    transition: background 0.2s;
   }
-  .sc-timetable-scroll::-webkit-scrollbar-thumb:hover {
+  ::-webkit-scrollbar-thumb:hover {
     background: var(--sc-dim);
   }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   /* Firefox */
-  .sc-timetable-scroll {
+  * {
     scrollbar-width: thin;
     scrollbar-color: var(--sc-border) transparent;
   }

@@ -24,6 +24,7 @@ const DAYS = [
   { key: "thu", label: "목" },
   { key: "fri", label: "금" },
   { key: "sat", label: "토" },
+  { key: "sun", label: "일" },
 ] as const;
 type DayKey = typeof DAYS[number]["key"];
 
@@ -34,17 +35,18 @@ const FALLBACK_ACCENTS = [
 
 // ── 타입 ──────────────────────────────────────────────────────
 export interface ScheduleBlock {
-  id:          string;
-  day:         DayKey;
-  start_time:  string;
-  end_time:    string;
-  title:       string;
-  subtitle?:   string;
-  color?:      string;
-  isPersonal:  boolean;
-  notes?:      string;
-  // 원본 personal_schedule 레코드 (수정용)
-  raw?:        any;
+  id:            string;
+  day:           DayKey;
+  start_time:    string;
+  end_time:      string;
+  title:         string;
+  subtitle?:     string;
+  color?:        string;
+  isPersonal:    boolean;
+  notes?:        string;
+  enrolledNames?: string[];
+  tags?:         string[];
+  raw?:          any;
 }
 
 interface Props {
@@ -101,7 +103,7 @@ function fmtWeekRange(monday: Date, sunday: Date): string {
 }
 
 const DAY_TO_KEY: Record<number, DayKey | null> = {
-  0: null, 1:"mon", 2:"tue", 3:"wed", 4:"thu", 5:"fri", 6:"sat",
+  0:"sun", 1:"mon", 2:"tue", 3:"wed", 4:"thu", 5:"fri", 6:"sat",
 };
 
 // ── 훅 ────────────────────────────────────────────────────────
@@ -252,16 +254,20 @@ function WeekNav({ weekOffset, setWeekOffset, compact = false }: {
 }
 
 // ── 블록 컴포넌트 ─────────────────────────────────────────────
-function Block({ b, isDark, onClick }: {
+function Block({ b, isDark, onClick, nowPx, onTagClick }: {
   b: ScheduleBlock; isDark: boolean; onClick: () => void;
+  nowPx: number | null;
+  onTagClick?: (tag: string) => void;
 }) {
   const top    = timeToMin(b.start_time) * (FIXED_PPH/60);
   const height = Math.max((timeToMin(b.end_time) - timeToMin(b.start_time)) * (FIXED_PPH/60), MIN_BLOCK_H);
   const accent = b.color ?? accentFor(b.title);
   const clr    = blockColor(accent, isDark);
-  const fzTitle = Math.max(8,  Math.min(14, Math.round(height*0.217)));
-  const fzTime  = Math.max(6,  Math.min(10, Math.round(height*0.158)));
-  const fzBadge = Math.max(5,  Math.min(9,  Math.round(height*0.133)));
+  const fzTitle = Math.max(8,  Math.min(11, Math.round(height*0.15)));
+  const fzTime  = Math.max(7,  Math.min(9,  Math.round(height*0.13)));
+
+  // 현재 시간이 이 블록 안에 있으면 테마색 강조
+  const isNow = nowPx !== null && nowPx >= top && nowPx <= top + height;
 
   return (
     <div
@@ -269,10 +275,14 @@ function Block({ b, isDark, onClick }: {
       onClick={e => { e.stopPropagation(); onClick(); }}
       style={{
         position:"absolute", top, height, left:3, right:3,
-        background:clr.bg, borderLeft:`3px solid ${clr.border}`,
+        background:clr.bg,
+        borderLeft: isNow ? `3px solid var(--sc-green)` : `3px solid ${clr.border}`,
         borderRadius:6, cursor:"pointer", overflow:"hidden",
         padding:"4px 6px", userSelect:"none",
-        transition:"filter 0.15s, transform 0.15s", zIndex:2,
+        transition:"filter 0.15s, transform 0.15s", zIndex: isNow ? 3 : 2,
+        boxShadow: isNow
+          ? `0 0 0 1.5px var(--sc-green), 0 2px 10px rgba(0,0,0,0.2)`
+          : undefined,
       }}
       onMouseEnter={e => {
         e.currentTarget.style.filter    = isDark ? "brightness(1.4)" : "brightness(0.88)";
@@ -282,31 +292,42 @@ function Block({ b, isDark, onClick }: {
       onMouseLeave={e => {
         e.currentTarget.style.filter    = "";
         e.currentTarget.style.transform = "";
-        e.currentTarget.style.zIndex    = "2";
+        e.currentTarget.style.zIndex    = isNow ? "3" : "2";
       }}
     >
-      {b.isPersonal && height > 14 && (
-        <div style={{
-          position:"absolute", top:3, right:4,
-          fontSize:fzBadge, fontWeight:800, color:"#000",
-          background:clr.border, borderRadius:3, padding:"1px 4px", opacity:0.9,
-        }}>개인</div>
-      )}
       {height > 16 && (
         <p style={{
-          fontSize:fzTitle, fontWeight:800, color:clr.text,
+          fontSize:fzTitle, fontWeight:700, color:clr.text,
           margin:0, lineHeight:1.3, overflow:"hidden",
           whiteSpace:"nowrap", textOverflow:"ellipsis",
-          paddingRight: b.isPersonal ? 26 : 0,
         }}>{b.title}</p>
       )}
-      {height > 28 && (
+      {/* 수강 학생 이름 */}
+      {!b.isPersonal && b.enrolledNames && b.enrolledNames.length > 0 && height > 28 && (
+        <p style={{
+          fontSize: Math.max(7, fzTitle - 2), fontWeight: 600, color: clr.muted,
+          margin: "1px 0 0", lineHeight: 1.2, overflow: "hidden",
+          whiteSpace: "nowrap", textOverflow: "ellipsis",
+        }}>
+          {b.enrolledNames.join(" · ")}
+        </p>
+      )}
+      {/* 시간 — 블록 하단 고정 */}
+      {height > 22 && (
         <div style={{
           position:"absolute", bottom:3, left:6, right:5,
-          fontSize:fzTime, fontWeight:600, color:clr.muted,
-          whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+          display:"flex", alignItems:"baseline", gap:2,
+          whiteSpace:"nowrap", overflow:"hidden",
         }}>
-          {toHHMM(b.start_time)} ~ {toHHMM(b.end_time)}
+          <span style={{ fontSize:fzTime + 1, fontWeight:700, color:clr.muted, fontVariantNumeric:"tabular-nums" }}>
+            {toHHMM(b.start_time)}
+          </span>
+          <span style={{ fontSize:fzTime - 1, fontWeight:300, color:clr.muted, opacity:0.55, margin:"0 1px" }}>
+            ~
+          </span>
+          <span style={{ fontSize:fzTime + 1, fontWeight:700, color:clr.muted, fontVariantNumeric:"tabular-nums" }}>
+            {toHHMM(b.end_time)}
+          </span>
         </div>
       )}
     </div>
@@ -391,6 +412,25 @@ function DetailModal({ block, onClose, onEdit, onDelete }: {
           }
           <Row label="시간" value={`${toHHMM(block.start_time)} ~ ${toHHMM(block.end_time)}`} />
           {block.notes && <Row label="메모" value={block.notes} />}
+          {block.tags && block.tags.length > 0 && (
+            <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+              <span style={{ fontSize:11, fontWeight:700, color:"var(--sc-dim)", minWidth:36, flexShrink:0 }}>태그</span>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                {block.tags.map(t => (
+                  <span key={t} style={{
+                    fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:20,
+                    background:"var(--sc-raised)", border:"1px solid var(--sc-border)",
+                    color:"var(--sc-white)",
+                  }}>#{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {block.raw?.group_id && (
+            <p style={{ fontSize:10, color:"var(--sc-dim)", fontWeight:600 }}>
+              묶음 일정 — 수정/삭제 시 같은 그룹 전체 적용
+            </p>
+          )}
         </div>
 
         {/* 버튼 */}
@@ -449,35 +489,58 @@ export type PersonalFormData = {
   color:         string;
   notes:         string;
   isRecurring:   boolean;
-  days:          DayKey[];      // 고정 일정 — 복수 요일
-  specific_date: string;        // 임시 일정 — 날짜 (YYYY-MM-DD)
+  days:          DayKey[];
+  specific_date: string;
+  tags:          string[];
 };
 
 // ── 개인 일정 추가/수정 모달 ───────────────────────────────────
-function PersonalFormModal({ initial, onClose, onSave }: {
-  initial?: ScheduleBlock | null;
-  onClose: () => void;
-  onSave:  (data: PersonalFormData) => Promise<void>;
+function PersonalFormModal({ initial, onClose, onSave, presetDay, presetTime, presetDate, suggestedTags }: {
+  initial?:        ScheduleBlock | null;
+  onClose:         () => void;
+  onSave:          (data: PersonalFormData) => Promise<void>;
+  presetDay?:      DayKey;
+  presetTime?:     string;
+  presetDate?:     string;
+  suggestedTags?:  string[];  // 다른 일정에서 사용 중인 태그 추천
 }) {
   const isEdit        = !!initial;
-  // 수정 시: raw.specific_date 있으면 임시, 없으면 고정 (모드 고정)
   const editIsRecurring = isEdit ? !initial!.raw?.specific_date : true;
 
   const [title,       setTitle]       = useState(initial?.title ?? "");
   const [isRecurring, setIsRecurring] = useState<boolean>(editIsRecurring);
-  // 고정 — 복수 요일 (수정 시에는 현재 요일 1개만)
   const [days,        setDays]        = useState<DayKey[]>(
-    isEdit ? [initial!.day] : ["mon"]
+    isEdit ? [initial!.day] : (presetDay ? [presetDay] : ["mon"])
   );
-  // 임시 — 날짜
   const [specDate,    setSpecDate]    = useState<string>(
-    initial?.raw?.specific_date ?? new Date().toISOString().split("T")[0]
+    initial?.raw?.specific_date          // 수정 시: 원본 날짜
+    ?? presetDate                         // 클릭으로 열릴 때: 클릭한 열의 날짜
+    ?? new Date().toISOString().split("T")[0]  // 기본: 오늘
   );
-  const [start,       setStart]       = useState(initial ? toHHMM(initial.start_time) : "09:00");
-  const [end,         setEnd]         = useState(initial ? toHHMM(initial.end_time)   : "10:00");
+
+  // 클릭으로 열렸을 때 시작시간 자동설정, 종료시간은 +1시간
+  function addOneHour(t: string) {
+    const [h, m] = t.split(":").map(Number);
+    return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  const defaultStart = presetTime ?? (initial ? toHHMM(initial.start_time) : "09:00");
+  const defaultEnd   = presetTime ? addOneHour(presetTime) : (initial ? toHHMM(initial.end_time) : "10:00");
+
+  const [start,       setStart]       = useState(defaultStart);
+  const [end,         setEnd]         = useState(defaultEnd);
   const [color,       setColor]       = useState(initial?.color ?? "#5badff");
   const [notes,       setNotes]       = useState(initial?.notes ?? "");
+  const [tags,        setTags]        = useState<string[]>(initial?.tags ?? []);
+  const [tagInput,    setTagInput]    = useState("");
   const [saving,      setSaving]      = useState(false);
+
+  function addTag() {
+    const v = tagInput.trim();
+    if (!v || tags.includes(v)) return;
+    setTags(prev => [...prev, v]);
+    setTagInput("");
+  }
+  function removeTag(t: string) { setTags(prev => prev.filter(x => x !== t)); }
 
   function toggleDay(key: DayKey) {
     setDays(prev =>
@@ -489,7 +552,7 @@ function PersonalFormModal({ initial, onClose, onSave }: {
     if (!title.trim()) return;
     if (isRecurring && days.length === 0) return;
     setSaving(true);
-    await onSave({ title, start_time:start, end_time:end, color, notes, isRecurring, days, specific_date:specDate });
+    await onSave({ title, start_time:start, end_time:end, color, notes, isRecurring, days, specific_date:specDate, tags });
     setSaving(false);
   }
 
@@ -545,15 +608,14 @@ function PersonalFormModal({ initial, onClose, onSave }: {
         {isRecurring ? (
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             <label style={{ fontSize:11, fontWeight:700, color:"var(--sc-dim)" }}>
-              요일{!isEdit && <span style={{ fontWeight:500, marginLeft:4 }}>(복수 선택 가능)</span>}
+              요일<span style={{ fontWeight:500, marginLeft:4 }}>{isEdit ? "(추가 선택 시 새 일정 생성)" : "(복수 선택 가능)"}</span>
             </label>
             <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
               {DAYS.map(d => {
                 const active = days.includes(d.key);
-                const locked = isEdit; // 수정 시 요일 변경은 단일
                 return (
-                  <button key={d.key}
-                    onClick={() => locked ? setDays([d.key]) : toggleDay(d.key)}
+                  <button key={d.key} type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleDay(d.key); }}
                     style={{
                       width:38, height:34, borderRadius:8, fontSize:12, fontWeight:800,
                       cursor:"pointer", transition:"all 0.12s",
@@ -597,6 +659,60 @@ function PersonalFormModal({ initial, onClose, onSave }: {
           </div>
         </div>
 
+        {/* 태그 */}
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          <label style={{ fontSize:11, fontWeight:700, color:"var(--sc-dim)" }}>태그</label>
+          <div style={{ display:"flex", gap:6 }}>
+            <input
+              style={{ ...inp, flex:1 }}
+              value={tagInput}
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
+              placeholder="태그 입력 후 Enter…"
+            />
+            <button type="button" onClick={addTag}
+              style={{ padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:800, cursor:"pointer",
+                background:"var(--sc-green)", color:"var(--sc-bg)", border:"none", flexShrink:0 }}>
+              추가
+            </button>
+          </div>
+          {tags.length > 0 && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+              {tags.map(t => (
+                <span key={t} style={{
+                  display:"flex", alignItems:"center", gap:4,
+                  padding:"3px 8px", borderRadius:20, fontSize:11, fontWeight:700,
+                  background:"var(--sc-raised)", border:"1px solid var(--sc-border)", color:"var(--sc-white)",
+                }}>
+                  #{t}
+                  <button type="button" onClick={() => removeTag(t)}
+                    style={{ fontSize:13, lineHeight:1, color:"var(--sc-dim)", cursor:"pointer",
+                      background:"none", border:"none", padding:0 }}>×</button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* 추천 태그 — 이미 선택된 것 제외 */}
+          {suggestedTags && suggestedTags.filter(t => !tags.includes(t)).length > 0 && (
+            <div>
+              <p style={{ fontSize:10, fontWeight:600, color:"var(--sc-dim)", margin:"4px 0 5px" }}>추천</p>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                {suggestedTags.filter(t => !tags.includes(t)).map(t => (
+                  <button key={t} type="button" onClick={() => setTags(prev => [...prev, t])}
+                    style={{
+                      padding:"3px 8px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer",
+                      background:"var(--sc-raised)", border:"1px solid var(--sc-border)",
+                      color:"var(--sc-dim)",
+                    }}>
+                    +#{t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* 메모 */}
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
           <label style={{ fontSize:11, fontWeight:700, color:"var(--sc-dim)" }}>메모</label>
@@ -624,27 +740,35 @@ function PersonalFormModal({ initial, onClose, onSave }: {
 }
 
 // ── 시간표 그리드 ──────────────────────────────────────────────
-function ScheduleGrid({ blocks, isDark, nowPx, todayKey, onBlockClick }: {
-  blocks:       ScheduleBlock[];
-  isDark:       boolean;
-  nowPx:        number | null;
-  todayKey:     DayKey | null;
-  onBlockClick: (b: ScheduleBlock) => void;
+function ScheduleGrid({ blocks, isDark, nowPx, todayKey, onBlockClick, onCellClick, onTagClick, fluid }: {
+  blocks:        ScheduleBlock[];
+  isDark:        boolean;
+  nowPx:         number | null;
+  todayKey:      DayKey | null;
+  onBlockClick:  (b: ScheduleBlock) => void;
+  onCellClick?:  (day: DayKey, time: string) => void;
+  onTagClick?:   (tag: string) => void;
+  fluid?:        boolean;  // true: 컬럼이 컨테이너 너비를 채움 (세로 레이아웃)
 }) {
+  const COL_W     = 93;  // 88 * 1.057 ≈ 93 (약 5% 확대)
   const TOTAL_H   = TOTAL_HOURS * FIXED_PPH;
-  const gridCols  = `${TIME_COL_W}px repeat(${DAYS.length}, minmax(80px, 1fr))`;
-  const gridMinW  = TIME_COL_W + DAYS.length * 80;
+  const gridCols  = fluid
+    ? `${TIME_COL_W}px repeat(${DAYS.length}, minmax(${COL_W}px, 1fr))`
+    : `${TIME_COL_W}px repeat(${DAYS.length}, ${COL_W}px)`;
+  const gridMinW  = TIME_COL_W + DAYS.length * COL_W;
   const HOUR_IDXS = Array.from({ length: TOTAL_HOURS+1 }, (_, i) => i);
 
   return (
-    <div style={{ minWidth:gridMinW }}>
-      {/* 컬럼 헤더 */}
+    <div style={{ width: fluid ? "100%" : gridMinW }}>
+      {/* 컬럼 헤더 — 페이지 스크롤 시 뷰포트 상단에 고정 */}
       <div style={{
         display:"grid", gridTemplateColumns:gridCols,
         position:"sticky", top:0, zIndex:10,
+        width: fluid ? "100%" : gridMinW,
         background:"var(--sc-surface)",
         borderBottom:"1px solid var(--sc-border)",
         borderRadius:"12px 12px 0 0",
+        backdropFilter:"blur(8px)",
       }}>
         <div />
         {DAYS.map(d => (
@@ -661,7 +785,7 @@ function ScheduleGrid({ blocks, isDark, nowPx, todayKey, onBlockClick }: {
       <div style={{
         display:"grid", gridTemplateColumns:gridCols,
         background:"var(--sc-surface)", borderRadius:"0 0 12px 12px",
-        overflow:"clip", minWidth:gridMinW,
+        overflow:"clip", width: fluid ? "100%" : gridMinW,
       }}>
         {/* 시간축 */}
         <div style={{ position:"relative", height:TOTAL_H, borderRight:"1px solid var(--sc-border)" }}>
@@ -680,15 +804,30 @@ function ScheduleGrid({ blocks, isDark, nowPx, todayKey, onBlockClick }: {
         {DAYS.map(d => {
           const colBlocks = blocks.filter(b => b.day === d.key);
           return (
-            <div key={d.key} style={{ position:"relative", height:TOTAL_H, borderLeft:"1px solid var(--sc-border)" }}>
+            <div key={d.key}
+              style={{
+                position:"relative", height:TOTAL_H, borderLeft:"1px solid var(--sc-border)",
+                cursor: onCellClick ? "crosshair" : "default",
+              }}
+              onClick={onCellClick ? (e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const y    = e.clientY - rect.top;
+                const mins = Math.round((y / FIXED_PPH) * 60 / 30) * 30; // 30분 단위
+                const h    = Math.floor(mins / 60) + BASE_HOUR;
+                const m    = mins % 60;
+                const time = `${String(h % 24).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+                onCellClick(d.key, time);
+              } : undefined}
+            >
               {HOUR_IDXS.map(i => (
                 <div key={i} style={{ position:"absolute", top:i*FIXED_PPH, left:0, right:0, height:1, background:"var(--sc-border)", opacity:0.45 }} />
               ))}
-              {d.key === todayKey && nowPx !== null && (
-                <div style={{ position:"absolute", top:nowPx, left:0, right:0, height:1.5, background:"var(--sc-green)", opacity:0.8, zIndex:15 }} />
-              )}
+
               {colBlocks.map(b => (
-                <Block key={b.id} b={b} isDark={isDark} onClick={() => onBlockClick(b)} />
+                <Block key={b.id} b={b} isDark={isDark}
+                  nowPx={d.key === todayKey ? nowPx : null}
+                  onClick={() => onBlockClick(b)}
+                  onTagClick={onTagClick} />
               ))}
             </div>
           );
@@ -714,11 +853,15 @@ export default function MyScheduleClient({
 
   const todayKey = DAY_TO_KEY[new Date().getDay()];
 
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [personal,   setPersonal]   = useState<any[]>(initialPersonal);
-  const [detailBlock, setDetailBlock] = useState<ScheduleBlock | null>(null);
-  const [editBlock,   setEditBlock]   = useState<ScheduleBlock | null>(null);
-  const [showAdd,     setShowAdd]     = useState(false);
+  const [weekOffset,   setWeekOffset]   = useState(0);
+  const [personal,     setPersonal]     = useState<any[]>(initialPersonal);
+  const [detailBlock,  setDetailBlock]  = useState<ScheduleBlock | null>(null);
+  const [editBlock,    setEditBlock]    = useState<ScheduleBlock | null>(null);
+  const [showAdd,      setShowAdd]      = useState(false);
+  const [presetDay,    setPresetDay]    = useState<DayKey | undefined>();
+  const [presetTime,   setPresetTime]   = useState<string | undefined>();
+  const [presetDate,   setPresetDate]   = useState<string | undefined>();
+  const [activeTags,   setActiveTags]   = useState<Set<string>>(new Set());
 
   // ── 현재 주 날짜 범위 ────────────────────────────────────
   const { weekDates } = useMemo(() => {
@@ -731,20 +874,36 @@ export default function MyScheduleClient({
     return { weekDates: dates };
   }, [weekOffset]);
 
+  // weekDates 확정 후 함수 정의 — 클로저에서 weekDates 안전하게 참조
+  function openAddWithPreset(day: DayKey, time: string) {
+    setPresetDay(day);
+    setPresetTime(time);
+    const dayIdx = DAYS.findIndex(d => d.key === day);
+    setPresetDate(dayIdx >= 0 ? weekDates[dayIdx] : undefined);
+    setShowAdd(true);
+  }
+
   // ── 블록 빌드 ─────────────────────────────────────────────
   const allBlocks = useMemo((): ScheduleBlock[] => {
     const result: ScheduleBlock[] = [];
 
-    // 선생님: classroom_schedules (반복 일정)
+    // 선생님: classroom_schedules (수업 + 상담)
     for (const s of classSchedules) {
       if (!s.day || !s.start_time || !s.end_time) continue;
+      const isConsulting = !s.courses && !!s.consulting_student;
       result.push({
         id: s.id, day: s.day as DayKey,
         start_time: toHHMM(s.start_time), end_time: toHHMM(s.end_time),
-        title:    s.courses?.subject ?? s.courses?.name ?? "수업",
-        subtitle: s.classrooms?.name,
-        color:    s.courses?.accent_color ?? accentFor(s.courses?.name ?? s.id),
-        isPersonal: false,
+        title: isConsulting
+          ? (s.consulting_student ?? "상담")          // 상담: 제목 = 학생 이름
+          : (s.courses?.subject ?? s.courses?.name ?? "수업"),
+        subtitle:      s.classrooms?.name,
+        color: isConsulting
+          ? (s.consulting_teacher_color ?? "#f472b6") // 상담: 선생님 색 or 분홍
+          : (s.courses?.accent_color ?? accentFor(s.courses?.name ?? s.id)),
+        enrolledNames: s.courses?.enrolled_names ?? [],
+        tags:          isConsulting ? ["상담"] : ["수업"],
+        isPersonal:    false,
       });
     }
 
@@ -759,7 +918,7 @@ export default function MyScheduleClient({
           start_time: toHHMM(cs.start_time), end_time: toHHMM(cs.end_time),
           title:    course.subject ?? course.name ?? "수업",
           subtitle: course.instructors?.name ? `${course.instructors.name}T` : undefined,
-          color:    accent, isPersonal: false,
+          color:    accent, tags: ["수업"], isPersonal: false,
         });
       }
     }
@@ -771,7 +930,7 @@ export default function MyScheduleClient({
       // specific_date: 해당 주에 포함될 때만 표시
       if (p.specific_date) {
         const dayIdx = weekDates.indexOf(p.specific_date);
-        if (dayIdx < 0 || dayIdx > 5) continue;  // 월~토 범위 밖이면 skip
+        if (dayIdx < 0 || dayIdx > 6) continue;
         const dayKey = DAYS[dayIdx]?.key;
         if (!dayKey) continue;
         result.push({
@@ -780,6 +939,7 @@ export default function MyScheduleClient({
           title: p.title ?? "개인 일정",
           color: p.color ?? "#888",
           notes: p.notes ?? undefined,
+          tags:  (p.tags && p.tags.length > 0) ? p.tags : [],
           isPersonal: true, raw: p,
         });
         continue;
@@ -793,6 +953,7 @@ export default function MyScheduleClient({
         title: p.title ?? "개인 일정",
         color: p.color ?? "#888",
         notes: p.notes ?? undefined,
+        tags:  (p.tags && p.tags.length > 0) ? p.tags : [],
         isPersonal: true, raw: p,
       });
     }
@@ -800,25 +961,67 @@ export default function MyScheduleClient({
     return result;
   }, [classSchedules, enrollments, personal, weekDates]);
 
+  // ── 태그 목록 + 통계 계산 ─────────────────────────────────
+  const { allTags, tagStats } = useMemo(() => {
+    const tagSet = new Set<string>();
+    // 블록별 분 계산
+    const minsByTag: Record<string, number> = {};
+    const daysByTag: Record<string, Set<string>> = {};
+
+    for (const b of allBlocks) {
+      const blockMins = timeToMin(b.end_time) - timeToMin(b.start_time);
+      const bTags = (b.tags && b.tags.length > 0) ? b.tags : ["기타"];
+      for (const t of bTags) {
+        tagSet.add(t);
+        minsByTag[t] = (minsByTag[t] ?? 0) + blockMins;
+        if (!daysByTag[t]) daysByTag[t] = new Set();
+        daysByTag[t].add(b.day);
+      }
+    }
+
+    const stats: Record<string, { totalMins: number; avgMins: number }> = {};
+    for (const t of Array.from(tagSet)) {
+      const totalMins = minsByTag[t] ?? 0;
+      const activeDays = daysByTag[t]?.size ?? 1;
+      stats[t] = { totalMins, avgMins: Math.round(totalMins / activeDays) };
+    }
+
+    return { allTags: Array.from(tagSet), tagStats: stats };
+  }, [allBlocks]);
+
+  // 태그 필터 적용
+  const filteredBlocks = useMemo(() => {
+    if (activeTags.size === 0) return allBlocks;
+    return allBlocks.filter(b => {
+      const bTags = b.tags ?? [];
+      return Array.from(activeTags).some(t =>
+        t === "기타" ? bTags.length === 0 : bTags.includes(t)
+      );
+    });
+  }, [allBlocks, activeTags]);
+
   // ── CRUD ──────────────────────────────────────────────────
   async function handleAdd(data: PersonalFormData) {
     if (data.isRecurring) {
-      // 고정 일정 — 선택된 요일 수만큼 레코드 삽입
+      // 복수 요일이면 group_id로 묶음 처리
+      const groupId = data.days.length > 1
+        ? crypto.randomUUID()
+        : undefined;
       const rows = data.days.map(d => ({
         profile_id: userId, title: data.title,
         day: d, start_time: data.start_time, end_time: data.end_time,
-        color: data.color, notes: data.notes || null, is_active: true,
+        color: data.color, notes: data.notes || null, tags: data.tags,
+        is_active: true, ...(groupId ? { group_id: groupId } : {}),
       }));
       const { data: inserted, error } = await supabase
         .from("personal_schedules").insert(rows).select();
       if (!error && inserted) setPersonal(prev => [...prev, ...inserted]);
     } else {
-      // 임시 일정 — specific_date
       const { data: inserted, error } = await supabase
         .from("personal_schedules")
         .insert({ profile_id:userId, title:data.title, specific_date:data.specific_date,
           start_time:data.start_time, end_time:data.end_time,
-          color:data.color, notes:data.notes||null, is_active:true })
+          color:data.color, notes:data.notes||null, tags:data.tags, is_active:true })
         .select().single();
       if (!error && inserted) setPersonal(prev => [...prev, inserted]);
     }
@@ -827,28 +1030,92 @@ export default function MyScheduleClient({
 
   async function handleUpdate(data: PersonalFormData) {
     if (!editBlock) return;
-    const patch = data.isRecurring
-      ? { title:data.title, day:data.days[0], start_time:data.start_time, end_time:data.end_time, color:data.color, notes:data.notes||null }
-      : { title:data.title, specific_date:data.specific_date, start_time:data.start_time, end_time:data.end_time, color:data.color, notes:data.notes||null };
-    const { data: updated, error } = await supabase
-      .from("personal_schedules").update(patch).eq("id", editBlock.id).select().single();
-    if (!error && updated) setPersonal(prev => prev.map(p => p.id === editBlock.id ? updated : p));
+    const groupId: string | null = editBlock.raw?.group_id ?? null;
+
+    // 공통 패치 (day/specific_date 제외)
+    const commonPatch = {
+      title:      data.title,
+      start_time: data.start_time,
+      end_time:   data.end_time,
+      color:      data.color,
+      notes:      data.notes || null,
+      tags:       data.tags,
+    };
+
+    if (groupId) {
+      // 묶음 일정: 같은 group_id 전체 UPDATE (day는 각자 유지)
+      const { data: updatedRows } = await supabase
+        .from("personal_schedules")
+        .update(commonPatch)
+        .eq("group_id", groupId)
+        .select();
+      if (updatedRows) {
+        setPersonal(prev => prev.map(p =>
+          updatedRows.find((u: any) => u.id === p.id) ?? p
+        ));
+      }
+    } else {
+      // 단일 일정 UPDATE
+      const singlePatch = data.isRecurring
+        ? { ...commonPatch, day: data.days[0] }
+        : { ...commonPatch, specific_date: data.specific_date };
+      const { data: updated } = await supabase
+        .from("personal_schedules").update(singlePatch).eq("id", editBlock.id).select().single();
+      if (updated) setPersonal(prev => prev.map(p => p.id === editBlock.id ? updated : p));
+
+      // 추가 요일 선택 시 새 묶음으로 묶기
+      if (data.isRecurring && data.days.length > 1) {
+        const newGroupId = crypto.randomUUID();
+        // 현재 레코드에 group_id 부여
+        await supabase.from("personal_schedules")
+          .update({ group_id: newGroupId }).eq("id", editBlock.id);
+        // 추가 요일 INSERT
+        const extraRows = data.days.slice(1).map(d => ({
+          profile_id: userId, title: data.title,
+          day: d, start_time: data.start_time, end_time: data.end_time,
+          color: data.color, notes: data.notes || null, tags: data.tags,
+          is_active: true, group_id: newGroupId,
+        }));
+        const { data: inserted } = await supabase
+          .from("personal_schedules").insert(extraRows).select();
+        if (inserted) setPersonal(prev => [
+          ...prev.map(p => p.id === editBlock.id ? { ...p, group_id: newGroupId } : p),
+          ...inserted,
+        ]);
+      }
+    }
+
     setEditBlock(null);
   }
 
   async function handleDelete(id: string, soft: boolean) {
-    if (soft) {
-      // 임시 삭제 — is_active = false (DB에 보존, 화면에서만 숨김)
-      const { data: updated } = await supabase
-        .from("personal_schedules")
-        .update({ is_active: false })
-        .eq("id", id)
-        .select().single();
-      if (updated) setPersonal(prev => prev.map(p => p.id === id ? updated : p));
+    // 묶음 일정이면 그룹 전체 처리
+    const target = personal.find(p => p.id === id);
+    const groupId: string | null = target?.group_id ?? null;
+
+    if (groupId) {
+      if (soft) {
+        const { data: updatedRows } = await supabase
+          .from("personal_schedules")
+          .update({ is_active: false })
+          .eq("group_id", groupId)
+          .select();
+        if (updatedRows) setPersonal(prev => prev.map(p =>
+          updatedRows.find((u: any) => u.id === p.id) ?? p
+        ));
+      } else {
+        await supabase.from("personal_schedules").delete().eq("group_id", groupId);
+        setPersonal(prev => prev.filter(p => p.group_id !== groupId));
+      }
     } else {
-      // 완전 삭제
-      await supabase.from("personal_schedules").delete().eq("id", id);
-      setPersonal(prev => prev.filter(p => p.id !== id));
+      if (soft) {
+        const { data: updated } = await supabase
+          .from("personal_schedules").update({ is_active: false }).eq("id", id).select().single();
+        if (updated) setPersonal(prev => prev.map(p => p.id === id ? updated : p));
+      } else {
+        await supabase.from("personal_schedules").delete().eq("id", id);
+        setPersonal(prev => prev.filter(p => p.id !== id));
+      }
     }
   }
 
@@ -889,10 +1156,105 @@ export default function MyScheduleClient({
     </button>
   );
 
+  // ── 태그 필터 + 통계 패널 ───────────────────────────────────
+  // 숫자는 크고 얇게, 단위는 작고 가볍게
+  function TimeNum({ mins, color = "var(--sc-white)" }: { mins: number; color?: string }) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return (
+      <span style={{ display:"inline-flex", alignItems:"baseline", gap:1 }}>
+        {h > 0 && (
+          <>
+            <span style={{ fontSize:22, fontWeight:200, color, lineHeight:1 }}>{h}</span>
+            <span style={{ fontSize:12, fontWeight:300, color:"var(--sc-dim)", marginRight:5, letterSpacing:"0.12em" }}>h</span>
+          </>
+        )}
+        {(m > 0 || h === 0) && (
+          <>
+            <span style={{ fontSize:22, fontWeight:200, color, lineHeight:1 }}>{m}</span>
+            <span style={{ fontSize:12, fontWeight:300, color:"var(--sc-dim)", letterSpacing:"0.12em" }}>m</span>
+          </>
+        )}
+      </span>
+    );
+  }
+
+  // 누적 통계: filteredBlocks 전체 합산
+  const cumulativeStats = useMemo(() => {
+    const totalMins = filteredBlocks.reduce((acc, b) =>
+      acc + timeToMin(b.end_time) - timeToMin(b.start_time), 0);
+    const activeDays = new Set(filteredBlocks.map(b => b.day)).size;
+    const avgMins = activeDays > 0 ? Math.round(totalMins / activeDays) : 0;
+    return { totalMins, avgMins };
+  }, [filteredBlocks]);
+
+  const TagPanel = () => (
+    <div style={{ marginTop:16 }}>
+      <p style={{ fontSize:10, fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase",
+        color:"var(--sc-dim)", margin:"0 0 8px" }}>태그 필터</p>
+
+      {/* 태그 버튼 — 다중 선택 */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:10 }}>
+        <button type="button" onClick={() => setActiveTags(new Set())}
+          style={{
+            padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer",
+            background: activeTags.size === 0 ? "var(--sc-green)" : "var(--sc-raised)",
+            color:      activeTags.size === 0 ? "var(--sc-bg)"    : "var(--sc-dim)",
+            border:     activeTags.size === 0 ? "none"            : "1px solid var(--sc-border)",
+          }}>전체</button>
+        {allTags.map(t => {
+          const on = activeTags.has(t);
+          return (
+            <button key={t} type="button" onClick={() => setActiveTags(prev => {
+              const next = new Set(prev);
+              on ? next.delete(t) : next.add(t);
+              return next;
+            })}
+              style={{
+                padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer",
+                background: on ? "var(--sc-green)" : "var(--sc-raised)",
+                color:      on ? "var(--sc-bg)"    : "var(--sc-dim)",
+                border:     on ? "none"            : "1px solid var(--sc-border)",
+              }}>#{t}</button>
+          );
+        })}
+      </div>
+
+      {/* 누적 통계 카드 */}
+      {filteredBlocks.length > 0 && (
+        <div style={{
+          padding:"10px 12px", borderRadius:10,
+          background:"var(--sc-raised)", border:"1px solid var(--sc-border)",
+        }}>
+          <div style={{ display:"flex", gap:16, alignItems:"flex-end" }}>
+            <div>
+              <p style={{ fontSize:11, fontWeight:400, color:"var(--sc-dim)", margin:"0 0 3px" }}>
+                주 합계
+              </p>
+              <TimeNum mins={cumulativeStats.totalMins} color="var(--sc-green)" />
+            </div>
+            <div>
+              <p style={{ fontSize:11, fontWeight:400, color:"var(--sc-dim)", margin:"0 0 3px" }}>
+                일 평균
+              </p>
+              <TimeNum mins={cumulativeStats.avgMins} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const grid = (
     <ScheduleGrid
-      blocks={allBlocks} isDark={isDark} nowPx={nowPx}
+      blocks={filteredBlocks} isDark={isDark} nowPx={nowPx}
       todayKey={todayKey} onBlockClick={b => setDetailBlock(b)}
+      onCellClick={!readOnly ? (day, time) => openAddWithPreset(day, time) : undefined}
+      onTagClick={tag => setActiveTags(prev => {
+        const next = new Set(prev);
+        next.has(tag) ? next.delete(tag) : next.add(tag);
+        return next;
+      })}
+      fluid={!isWide}  // 세로 레이아웃: 컨테이너 너비 채우기
     />
   );
 
@@ -909,8 +1271,12 @@ export default function MyScheduleClient({
       {(showAdd || editBlock) && (
         <PersonalFormModal
           initial={editBlock ?? null}
-          onClose={() => { setShowAdd(false); setEditBlock(null); }}
+          onClose={() => { setShowAdd(false); setEditBlock(null); setPresetDay(undefined); setPresetTime(undefined); setPresetDate(undefined); }}
           onSave={editBlock ? handleUpdate : handleAdd}
+          presetDay={!editBlock ? presetDay : undefined}
+          presetTime={!editBlock ? presetTime : undefined}
+          presetDate={!editBlock ? presetDate : undefined}
+          suggestedTags={allTags}
         />
       )}
     </>
@@ -919,7 +1285,7 @@ export default function MyScheduleClient({
   // ── 가로 레이아웃 ─────────────────────────────────────────
   if (isWide) {
     return (
-      <div style={{ display:"flex", height:"100vh", background:"var(--sc-bg)" }}>
+      <div style={{ display:"flex", alignItems:"flex-start", minHeight:"100vh", background:"var(--sc-bg)" }}>
         <div style={{
           width:260, flexShrink:0, position:"sticky", top:0,
           height:"100vh", overflowY:"auto",
@@ -952,10 +1318,14 @@ export default function MyScheduleClient({
               개인 일정 추가
             </button>
           )}
+
+          {/* 사이드바 태그 패널 */}
+          <TagPanel />
         </div>
 
-        <div style={{ width:780, flexShrink:0, height:"100vh", overflow:"auto" }}>
-          <div style={{ padding:"12px 20px 40px" }}>{grid}</div>
+        {/* 그리드 — 자연 크기 유지, 세로는 페이지 스크롤 */}
+        <div style={{ flexShrink:0, overflowX:"auto" }}>
+          <div style={{ padding:"12px 20px 60px" }}>{grid}</div>
         </div>
 
         {modals}
@@ -985,7 +1355,14 @@ export default function MyScheduleClient({
         </div>
       </div>
 
-      <div style={{ width:820, margin:"0 auto", padding:"20px 32px" }}>
+      {/* 태그 필터 + 통계 — 세로 레이아웃 */}
+      {allTags.length > 0 && (
+        <div style={{ maxWidth:900, margin:"0 auto", padding:"12px 24px 0" }}>
+          <TagPanel />
+        </div>
+      )}
+
+      <div style={{ maxWidth:900, margin:"0 auto", overflowX:"auto", padding:"16px 24px 60px" }}>
         {grid}
       </div>
 

@@ -23,7 +23,7 @@ export default async function MySchedulePage() {
 
   // ── 선생님/매니저/관리자: classroom_schedules (내 강의) + personal_schedules
   if (role === "admin" || role === "manager" || role === "teacher") {
-    // teacher 레코드 조회
+    // teacher 레코드 조회 (기존 teacher_id 방식)
     const { data: teacherRow } = await supabase
       .from("teachers")
       .select("id")
@@ -32,18 +32,64 @@ export default async function MySchedulePage() {
 
     const teacherId = teacherRow?.id ?? null;
 
-    // 강의 일정
-    const { data: classSchedules } = teacherId
-      ? await supabase
-          .from("classroom_schedules")
-          .select(`
-            id, day, start_time, end_time, effective_from, effective_until,
-            courses ( id, name, subject, accent_color ),
-            classrooms ( id, name )
-          `)
-          .eq("teacher_id", teacherId)
-          .or(`effective_until.is.null,effective_until.gte.${today}`)
-      : { data: [] };
+    // instructor 레코드 조회 (신규 instructor 방식 — profile_id 연동)
+    const { data: instructorRow } = await supabase
+      .from("instructors")
+      .select("id, name")
+      .eq("profile_id", user.id)
+      .maybeSingle();
+
+    const instructorId   = instructorRow?.id   ?? null;
+    const instructorName = instructorRow?.name  ?? null;
+
+    // 강의 일정 + 상담 일정 — 세 가지 경로 병렬 fetch
+    const [teacherSchedules, instructorSchedules, consultingSchedules] = await Promise.all([
+      // 기존: classroom_schedules.teacher_id 기준
+      teacherId
+        ? supabase
+            .from("classroom_schedules")
+            .select(`id, day, start_time, end_time, effective_from, effective_until,
+                     courses ( id, name, subject, accent_color, enrolled_names ),
+                     classrooms ( id, name )`)
+            .eq("teacher_id", teacherId)
+            .or(`effective_until.is.null,effective_until.gte.${today}`)
+        : Promise.resolve({ data: [] }),
+
+      // 신규: courses.instructor_id 기준 (유저 연동 선생님)
+      instructorId
+        ? supabase
+            .from("classroom_schedules")
+            .select(`id, day, start_time, end_time, effective_from, effective_until,
+                     courses!inner ( id, name, subject, accent_color, enrolled_names, instructor_id ),
+                     classrooms ( id, name )`)
+            .eq("courses.instructor_id", instructorId)
+            .or(`effective_until.is.null,effective_until.gte.${today}`)
+        : Promise.resolve({ data: [] }),
+
+      // 상담 일정: consulting_teacher 이름으로 직접 매칭
+      // → 기존 데이터 포함 모두 커버 (sync 불필요)
+      instructorName
+        ? supabase
+            .from("classroom_schedules")
+            .select(`id, day, start_time, end_time, effective_from, effective_until,
+                     consulting_student, consulting_teacher, consulting_teacher_color,
+                     classrooms ( id, name )`)
+            .ilike("consulting_teacher", instructorName)
+            .not("consulting_student", "is", null)
+            .or(`effective_until.is.null,effective_until.gte.${today}`)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    // 중복 제거 후 합산
+    const seenIds = new Set<string>();
+    const classSchedules: any[] = [];
+    for (const s of [
+      ...(teacherSchedules.data    ?? []),
+      ...(instructorSchedules.data ?? []),
+      ...(consultingSchedules.data ?? []),
+    ]) {
+      if (!seenIds.has(s.id)) { seenIds.add(s.id); classSchedules.push(s); }
+    }
 
     // 개인 일정
     const { data: personalSchedules } = await supabase
@@ -56,7 +102,7 @@ export default async function MySchedulePage() {
       <MyScheduleClient
         userRole={role}
         userName={profile.name}
-        classSchedules={(classSchedules ?? []) as any[]}
+        classSchedules={classSchedules as any[]}
         personalSchedules={(personalSchedules ?? []) as any[]}
         userId={user.id}
       />
